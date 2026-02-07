@@ -9,9 +9,30 @@ import {
   User,
   ArrowLeft,
   Sparkles,
+  MessageSquareOff,
+  Star,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  getRemainingChats,
+  incrementChatCount,
+  getChatUsage,
+} from "@/lib/chatLimit";
+
+// ---------- 定数 ----------
+const FREE_CHAT_LIMIT = 3;
+const LINE_URL =
+  "https://lin.ee/JlpMkfy?utm_source=career-ai&utm_medium=chat-limit";
+const LINE_URL_PLAIN = "https://lin.ee/JlpMkfy";
 
 // ---------- 型定義 ----------
 interface Message {
@@ -32,6 +53,101 @@ const SUGGESTION_TEMPLATES = [
   "転職活動の具体的なスケジュールは？",
   "この業界の将来性は？",
 ];
+
+// ---------- 残り回数バッジ ----------
+function RemainingBadge({ remaining }: { remaining: number }) {
+  if (remaining <= 0) {
+    return (
+      <span className="text-xs font-medium text-red-600 bg-red-50 dark:bg-red-950/30 px-2.5 py-1 rounded-full">
+        無料回数を使い切りました
+      </span>
+    );
+  }
+  if (remaining === 1) {
+    return (
+      <span className="text-xs font-medium text-orange-600 bg-orange-50 dark:bg-orange-950/30 px-2.5 py-1 rounded-full">
+        残り1回です
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+      無料チャット 残り {remaining}/{FREE_CHAT_LIMIT} 回
+    </span>
+  );
+}
+
+// ---------- 制限画面（インライン） ----------
+function LimitReachedCard({
+  onPremiumClick,
+}: {
+  onPremiumClick: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="flex justify-start"
+    >
+      <div className="max-w-[85%] sm:max-w-[75%]">
+        <div className="bg-muted/60 border rounded-2xl rounded-tl-sm p-5 space-y-4">
+          <div className="text-center space-y-1">
+            <MessageSquareOff className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+            <p className="font-semibold text-sm">
+              無料チャットの回数を使い切りました
+            </p>
+            <p className="text-xs text-muted-foreground">
+              キャリアについてもっと詳しく相談したい方は、以下からお選びください
+            </p>
+          </div>
+
+          {/* LINE相談カード */}
+          <div className="bg-background border rounded-xl p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🟢</span>
+              <span className="text-sm font-semibold">
+                無料でエージェントに相談する
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              プロの転職アドバイザーがLINEで無料サポートします
+            </p>
+            <a href={LINE_URL} target="_blank" rel="noopener noreferrer">
+              <Button
+                className="w-full gap-2 text-white"
+                style={{ backgroundColor: "#06C755" }}
+              >
+                <ExternalLink className="w-4 h-4" />
+                LINEで無料相談する
+              </Button>
+            </a>
+          </div>
+
+          {/* 課金カード */}
+          <div className="bg-background border rounded-xl p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <Star className="w-4 h-4 text-yellow-500" />
+              <span className="text-sm font-semibold">
+                課金してチャットを続ける
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              月額¥980でAIチャットが無制限で利用できます
+            </p>
+            <Button
+              className="w-full gap-2"
+              variant="default"
+              onClick={onPremiumClick}
+            >
+              プレミアムに加入する
+            </Button>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 // ---------- タイピングインジケーター ----------
 function TypingIndicator() {
@@ -113,6 +229,9 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
+  const [remaining, setRemaining] = useState(FREE_CHAT_LIMIT);
+  const [isLimited, setIsLimited] = useState(false);
+  const [showPremiumDialog, setShowPremiumDialog] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -134,17 +253,39 @@ export default function ChatPage() {
     } catch {
       // データがなくてもチャットは利用可
     }
+
+    // 初期残り回数
+    const usage = getChatUsage();
+    const rem = getRemainingChats();
+    setRemaining(rem);
+    if (!usage.isPremium && rem <= 0) {
+      setIsLimited(true);
+    }
   }, []);
 
   // 自動スクロール
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isStreaming]);
+  }, [messages, isStreaming, isLimited]);
 
   const sendMessage = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || isStreaming) return;
+      if (!trimmed || isStreaming || isLimited) return;
+
+      // 回数チェック
+      const { allowed, remaining: newRemaining } = incrementChatCount();
+      setRemaining(newRemaining);
+
+      if (!allowed) {
+        // ユーザーメッセージは表示するが、APIには送信しない
+        const userMessage: Message = { role: "user", content: trimmed };
+        setMessages((prev) => [...prev, userMessage]);
+        setInput("");
+        setShowSuggestions(false);
+        setIsLimited(true);
+        return;
+      }
 
       setShowSuggestions(false);
       setInput("");
@@ -154,7 +295,7 @@ export default function ChatPage() {
       setMessages(updatedMessages);
       setIsStreaming(true);
 
-      // API用の会話履歴（初回メッセージは除く）
+      // API用の会話履歴
       const apiMessages = updatedMessages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -233,7 +374,6 @@ export default function ChatPage() {
             ? err.message
             : "エラーが発生しました。もう一度お試しください。";
         setMessages((prev) => {
-          // 空のassistantメッセージがあれば置き換え、なければ追加
           const last = prev[prev.length - 1];
           if (last?.role === "assistant" && last.content === "") {
             const next = [...prev];
@@ -253,7 +393,7 @@ export default function ChatPage() {
         abortRef.current = null;
       }
     },
-    [messages, isStreaming]
+    [messages, isStreaming, isLimited]
   );
 
   const handleSend = () => sendMessage(input);
@@ -281,7 +421,7 @@ export default function ChatPage() {
         >
           <ArrowLeft className="w-4 h-4" />
         </Button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-1">
           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
             <Bot className="w-4 h-4 text-primary" />
           </div>
@@ -292,6 +432,7 @@ export default function ChatPage() {
             </p>
           </div>
         </div>
+        <RemainingBadge remaining={remaining} />
       </header>
 
       {/* メッセージエリア */}
@@ -307,7 +448,7 @@ export default function ChatPage() {
 
         {/* 提案テンプレート */}
         <AnimatePresence>
-          {showSuggestions && messages.length === 1 && (
+          {showSuggestions && messages.length === 1 && !isLimited && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -334,6 +475,13 @@ export default function ChatPage() {
           )}
         </AnimatePresence>
 
+        {/* 制限到達カード */}
+        {isLimited && (
+          <LimitReachedCard
+            onPremiumClick={() => setShowPremiumDialog(true)}
+          />
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -345,21 +493,53 @@ export default function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="メッセージを入力..."
-            disabled={isStreaming}
+            placeholder={
+              isLimited
+                ? "無料チャットの回数を使い切りました"
+                : "メッセージを入力..."
+            }
+            disabled={isStreaming || isLimited}
             rows={1}
-            className="min-h-[40px] max-h-[120px] resize-none"
+            className={`min-h-[40px] max-h-[120px] resize-none ${
+              isLimited ? "opacity-50 cursor-not-allowed" : ""
+            }`}
           />
           <Button
             size="icon"
             onClick={handleSend}
-            disabled={!input.trim() || isStreaming}
+            disabled={!input.trim() || isStreaming || isLimited}
             className="h-10 w-10 flex-shrink-0"
           >
             <Send className="w-4 h-4" />
           </Button>
         </div>
       </div>
+
+      {/* プレミアムダイアログ */}
+      <Dialog open={showPremiumDialog} onOpenChange={setShowPremiumDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>プレミアムプラン</DialogTitle>
+            <DialogDescription>
+              プレミアムプランは現在準備中です。
+              公式LINEにご登録いただくと、リリース時にお知らせします。
+            </DialogDescription>
+          </DialogHeader>
+          <a
+            href={LINE_URL_PLAIN}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Button
+              className="w-full gap-2 text-white"
+              style={{ backgroundColor: "#06C755" }}
+            >
+              <ExternalLink className="w-4 h-4" />
+              公式LINEに登録する
+            </Button>
+          </a>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

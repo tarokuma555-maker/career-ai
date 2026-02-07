@@ -26,6 +26,8 @@ import {
   ChevronDown,
   ChevronUp,
   GraduationCap,
+  ExternalLink,
+  ArrowRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +39,21 @@ import {
 import { Badge } from "@/components/ui/badge";
 import type { AnalysisResult, CareerPath } from "@/lib/types";
 import { generatePdf } from "@/lib/generate-pdf";
+
+const LINE_URL = "https://lin.ee/JlpMkfy";
+
+function LineIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386a.63.63 0 0 1-.627-.629V8.108a.63.63 0 0 1 .627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016a.63.63 0 0 1-.629.631.626.626 0 0 1-.51-.262l-2.455-3.338v2.969a.63.63 0 0 1-.63.631.627.627 0 0 1-.629-.631V8.108a.627.627 0 0 1 .629-.63c.2 0 .381.095.51.262l2.455 3.333V8.108a.63.63 0 0 1 .63-.63.63.63 0 0 1 .629.63v4.771zm-5.741 0a.63.63 0 0 1-1.26 0V8.108a.631.631 0 0 1 1.26 0v4.771zm-2.451.631H4.932a.63.63 0 0 1-.627-.631V8.108a.63.63 0 0 1 1.26 0v4.141h1.754c.349 0 .63.285.63.63 0 .344-.281.631-.63.631M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
+    </svg>
+  );
+}
 
 // ---------- 円形プログレス ----------
 function CircularScore({ score }: { score: number }) {
@@ -297,6 +314,20 @@ function CareerPathCard({
                   面接対策をする
                 </Button>
               </div>
+
+              {/* LINE相談リンク */}
+              <div className="text-center pt-1">
+                <a
+                  href={LINE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm font-medium hover:underline"
+                  style={{ color: "#06C755" }}
+                >
+                  このプランについて相談する
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </a>
+              </div>
             </motion.div>
           )}
         </CardContent>
@@ -508,12 +539,40 @@ export default function ResultPage() {
           </Card>
         </motion.section>
 
+        {/* LINE CTA カード */}
+        <motion.div
+          initial={{ opacity: 0, y: 20, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ delay: 0.75, type: "spring", stiffness: 300, damping: 24 }}
+        >
+          <a
+            href={LINE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full rounded-xl px-6 py-5 text-white transition-all hover:brightness-90 hover:-translate-y-0.5"
+            style={{ backgroundColor: "#06C755" }}
+          >
+            <div className="flex items-center gap-4">
+              <LineIcon className="w-10 h-10 flex-shrink-0" />
+              <div>
+                <p className="text-lg font-bold leading-snug">
+                  無料でエージェントに相談する
+                </p>
+                <p className="text-sm mt-0.5" style={{ color: "rgba(255,255,255,0.7)" }}>
+                  プロの転職アドバイザーがLINEで無料サポート
+                </p>
+              </div>
+              <ExternalLink className="w-5 h-5 flex-shrink-0 ml-auto opacity-70" />
+            </div>
+          </a>
+        </motion.div>
+
         {/* アクションボタン */}
         <motion.div
-          className="flex flex-col sm:flex-row justify-center gap-3 pt-4 pb-8"
+          className="flex flex-col sm:flex-row justify-center gap-3 pt-2 pb-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
+          transition={{ delay: 0.85 }}
         >
           <Link href="/chat">
             <Button size="lg" className="w-full sm:w-auto gap-2">
@@ -535,15 +594,21 @@ export default function ResultPage() {
             )}
             {isGeneratingPdf ? "生成中..." : "結果をPDFで保存"}
           </Button>
-          <Link href="/diagnosis">
-            <Button
-              size="lg"
-              variant="outline"
-              className="w-full sm:w-auto gap-2"
-            >
-              <RotateCcw className="w-4 h-4" />
-              もう一度診断する
-            </Button>
+        </motion.div>
+
+        {/* もう一度診断するリンク */}
+        <motion.div
+          className="text-center pb-8"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.9 }}
+        >
+          <Link
+            href="/diagnosis"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            もう一度診断する
           </Link>
         </motion.div>
       </div>
