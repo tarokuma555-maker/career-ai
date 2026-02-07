@@ -21,3 +21,22 @@ export interface AnalysisResult {
   skill_analysis: SkillAnalysis;
   overall_advice: string;
 }
+
+export interface InterviewQuestion {
+  id: number;
+  question: string;
+}
+
+export interface InterviewReview {
+  question: string;
+  original_answer: string;
+  improved_answer: string;
+  score: number;
+  feedback: string;
+}
+
+export interface InterviewResult {
+  reviews: InterviewReview[];
+  overall_score: number;
+  overall_advice: string;
+}

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { Loader2 } from "lucide-react";
 import {
   Radar,
   RadarChart,
@@ -24,6 +25,7 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  GraduationCap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +36,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { AnalysisResult, CareerPath } from "@/lib/types";
+import { generatePdf } from "@/lib/generate-pdf";
 
 // ---------- 円形プログレス ----------
 function CircularScore({ score }: { score: number }) {
@@ -127,6 +130,7 @@ function CareerPathCard({
   path: CareerPath;
   index: number;
 }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(index === 0);
 
   return (
@@ -279,6 +283,20 @@ function CareerPathCard({
                 </div>
                 <p className="text-sm text-muted-foreground">{path.risks}</p>
               </div>
+
+              {/* 面接対策ボタン */}
+              <div className="pt-2">
+                <Button
+                  className="w-full gap-2"
+                  onClick={() => {
+                    localStorage.setItem("interviewTarget", path.title);
+                    router.push("/interview");
+                  }}
+                >
+                  <GraduationCap className="w-4 h-4" />
+                  面接対策をする
+                </Button>
+              </div>
             </motion.div>
           )}
         </CardContent>
@@ -291,6 +309,7 @@ function CareerPathCard({
 export default function ResultPage() {
   const router = useRouter();
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   useEffect(() => {
     const raw = localStorage.getItem("analysisResult");
@@ -304,6 +323,21 @@ export default function ResultPage() {
       router.replace("/diagnosis");
     }
   }, [router]);
+
+  const handleDownloadPdf = useCallback(async () => {
+    if (!result || isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      const diagRaw = localStorage.getItem("diagnosisData");
+      const diag = diagRaw ? JSON.parse(diagRaw) : undefined;
+      await generatePdf(result, diag);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      alert("PDFの生成に失敗しました。もう一度お試しください。");
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  }, [result, isGeneratingPdf]);
 
   if (!result) {
     return (
@@ -491,11 +525,15 @@ export default function ResultPage() {
             size="lg"
             variant="outline"
             className="w-full sm:w-auto gap-2"
-            disabled
-            title="今後実装予定"
+            onClick={handleDownloadPdf}
+            disabled={isGeneratingPdf}
           >
-            <FileDown className="w-4 h-4" />
-            結果をPDFで保存
+            {isGeneratingPdf ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileDown className="w-4 h-4" />
+            )}
+            {isGeneratingPdf ? "生成中..." : "結果をPDFで保存"}
           </Button>
           <Link href="/diagnosis">
             <Button
