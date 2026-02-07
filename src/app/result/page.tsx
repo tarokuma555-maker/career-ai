@@ -341,6 +341,8 @@ export default function ResultPage() {
   const router = useRouter();
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [diag, setDiag] = useState<Record<string, any> | null>(null);
 
   useEffect(() => {
     const raw = localStorage.getItem("analysisResult");
@@ -353,22 +355,27 @@ export default function ResultPage() {
     } catch {
       router.replace("/diagnosis");
     }
+
+    try {
+      const diagRaw = localStorage.getItem("diagnosisData");
+      if (diagRaw) setDiag(JSON.parse(diagRaw));
+    } catch {
+      // ignore
+    }
   }, [router]);
 
   const handleDownloadPdf = useCallback(async () => {
     if (!result || isGeneratingPdf) return;
     setIsGeneratingPdf(true);
     try {
-      const diagRaw = localStorage.getItem("diagnosisData");
-      const diag = diagRaw ? JSON.parse(diagRaw) : undefined;
-      await generatePdf(result, diag);
+      await generatePdf(result, diag ?? undefined);
     } catch (err) {
       console.error("PDF generation failed:", err);
       alert("PDFの生成に失敗しました。もう一度お試しください。");
     } finally {
       setIsGeneratingPdf(false);
     }
-  }, [result, isGeneratingPdf]);
+  }, [result, isGeneratingPdf, diag]);
 
   if (!result) {
     return (
@@ -390,10 +397,6 @@ export default function ResultPage() {
     現在: result.skill_analysis.current_skills[skill] ?? 0,
     目標: result.skill_analysis.target_skills[skill] ?? 0,
   }));
-
-  // ユーザー情報サマリー
-  const diagRaw = localStorage.getItem("diagnosisData");
-  const diag = diagRaw ? JSON.parse(diagRaw) : null;
 
   return (
     <main className="min-h-screen py-10 px-4">

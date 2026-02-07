@@ -262,6 +262,7 @@ export default function InterviewPage() {
                 <CardContent>
                   <Textarea
                     placeholder="あなたの回答を入力してください..."
+                    aria-label={`質問${q.id}への回答`}
                     rows={4}
                     value={answers[q.id] ?? ""}
                     onChange={(e) =>

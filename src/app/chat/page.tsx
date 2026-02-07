@@ -40,7 +40,6 @@ interface Message {
   content: string;
 }
 
-// ---------- 定数 ----------
 const INITIAL_MESSAGE: Message = {
   role: "assistant",
   content:
@@ -418,6 +417,7 @@ export default function ChatPage() {
           size="icon"
           className="h-8 w-8"
           onClick={() => router.back()}
+          aria-label="戻る"
         >
           <ArrowLeft className="w-4 h-4" />
         </Button>
@@ -509,6 +509,7 @@ export default function ChatPage() {
             onClick={handleSend}
             disabled={!input.trim() || isStreaming || isLimited}
             className="h-10 w-10 flex-shrink-0"
+            aria-label="送信"
           >
             <Send className="w-4 h-4" />
           </Button>

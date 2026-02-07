@@ -1,6 +1,31 @@
 import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 
+// ---------- レート制限（インメモリ / HMR耐性） ----------
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX = 10;
+
+const globalForRateLimit = globalThis as unknown as {
+  _chatRateLimitLog?: Map<string, number[]>;
+};
+const requestLog =
+  globalForRateLimit._chatRateLimitLog ??
+  (globalForRateLimit._chatRateLimitLog = new Map<string, number[]>());
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const timestamps = requestLog.get(ip) ?? [];
+  const recent = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  requestLog.set(ip, recent);
+
+  if (recent.length >= RATE_LIMIT_MAX) {
+    return true;
+  }
+  recent.push(now);
+  requestLog.set(ip, recent);
+  return false;
+}
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -51,6 +76,20 @@ export async function POST(request: NextRequest) {
           "APIキーが設定されていません。.env.local にANTHROPIC_API_KEYを設定してください。",
       }),
       { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
+    "unknown";
+
+  if (isRateLimited(ip)) {
+    return new Response(
+      JSON.stringify({
+        error: "リクエスト回数の上限に達しました。1分後に再度お試しください。",
+      }),
+      { status: 429, headers: { "Content-Type": "application/json" } }
     );
   }
 
