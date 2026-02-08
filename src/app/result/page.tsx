@@ -28,6 +28,9 @@ import {
   GraduationCap,
   ExternalLink,
   ArrowRight,
+  Share2,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +40,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import type { AnalysisResult, CareerPath } from "@/lib/types";
 import { generatePdf } from "@/lib/generate-pdf";
 
@@ -343,6 +353,10 @@ export default function ResultPage() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [diag, setDiag] = useState<Record<string, any> | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const raw = localStorage.getItem("analysisResult");
@@ -376,6 +390,54 @@ export default function ResultPage() {
       setIsGeneratingPdf(false);
     }
   }, [result, isGeneratingPdf, diag]);
+
+  const handleShare = useCallback(async () => {
+    if (!result || isSharing) return;
+    setIsSharing(true);
+    setCopied(false);
+    try {
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysisResult: result,
+          diagnosisData: diag ?? undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "共有リンクの作成に失敗しました。");
+      }
+      const url = `${window.location.origin}/result/share/${data.shareId}`;
+      setShareUrl(url);
+      setShowShareDialog(true);
+    } catch (err) {
+      alert(
+        err instanceof Error ? err.message : "共有リンクの作成に失敗しました。"
+      );
+    } finally {
+      setIsSharing(false);
+    }
+  }, [result, isSharing, diag]);
+
+  const handleCopyUrl = useCallback(async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+      const input = document.createElement("input");
+      input.value = shareUrl;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }, [shareUrl]);
 
   if (!result) {
     return (
@@ -597,6 +659,20 @@ export default function ResultPage() {
             )}
             {isGeneratingPdf ? "生成中..." : "結果をPDFで保存"}
           </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="w-full sm:w-auto gap-2"
+            onClick={handleShare}
+            disabled={isSharing}
+          >
+            {isSharing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Share2 className="w-4 h-4" />
+            )}
+            {isSharing ? "作成中..." : "共有リンクを作成"}
+          </Button>
         </motion.div>
 
         {/* もう一度診断するリンク */}
@@ -615,6 +691,46 @@ export default function ResultPage() {
           </Link>
         </motion.div>
       </div>
+
+      {/* 共有ダイアログ */}
+      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="w-5 h-5" />
+              共有リンク
+            </DialogTitle>
+            <DialogDescription>
+              このリンクを共有すると、誰でもあなたの診断結果を閲覧できます。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={shareUrl ?? ""}
+                className="flex-1 rounded-md border bg-muted px-3 py-2 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 flex-shrink-0"
+                onClick={handleCopyUrl}
+              >
+                {copied ? (
+                  <Check className="w-4 h-4 text-green-500" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+                {copied ? "コピー済み" : "コピー"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              共有リンクは作成から30日間有効です。取り扱いにご注意ください。
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

@@ -11,6 +11,11 @@ import {
   Send,
   CheckCircle2,
   ArrowRight,
+  ExternalLink,
+  Star,
+  Clock,
+  Users,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +24,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
@@ -28,18 +40,37 @@ import type {
   CareerPath,
 } from "@/lib/types";
 
-type Phase = "loading" | "answering" | "reviewing" | "result";
+const LINE_URL_FREE =
+  "https://lin.ee/JlpMkfy?utm_source=career-ai&utm_medium=interview";
+const LINE_URL_PAID_PENDING =
+  "https://lin.ee/JlpMkfy?utm_source=career-ai&utm_medium=interview-paid-pending";
+
+function LineIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386a.63.63 0 0 1-.627-.629V8.108a.63.63 0 0 1 .627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016a.63.63 0 0 1-.629.631.626.626 0 0 1-.51-.262l-2.455-3.338v2.969a.63.63 0 0 1-.63.631.627.627 0 0 1-.629-.631V8.108a.627.627 0 0 1 .629-.63c.2 0 .381.095.51.262l2.455 3.333V8.108a.63.63 0 0 1 .63-.63.63.63 0 0 1 .629.63v4.771zm-5.741 0a.63.63 0 0 1-1.26 0V8.108a.631.631 0 0 1 1.26 0v4.771zm-2.451.631H4.932a.63.63 0 0 1-.627-.631V8.108a.63.63 0 0 1 1.26 0v4.141h1.754c.349 0 .63.285.63.63 0 .344-.281.631-.63.631M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
+    </svg>
+  );
+}
+
+type Phase = "selecting" | "loading" | "answering" | "reviewing" | "result";
 
 export default function InterviewPage() {
   const router = useRouter();
-  const [phase, setPhase] = useState<Phase>("loading");
+  const [phase, setPhase] = useState<Phase>("selecting");
   const [careerTitle, setCareerTitle] = useState("");
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [result, setResult] = useState<InterviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showPaidDialog, setShowPaidDialog] = useState(false);
 
-  // 質問生成
+  // localStorage読み取り
   useEffect(() => {
     const target = localStorage.getItem("interviewTarget");
     if (!target) {
@@ -47,6 +78,11 @@ export default function InterviewPage() {
       return;
     }
     setCareerTitle(target);
+  }, [router]);
+
+  // 質問生成（phase が loading になったら実行）
+  useEffect(() => {
+    if (phase !== "loading" || !careerTitle) return;
 
     // キャリアパスの詳細を取得
     let careerDetail = "";
@@ -55,7 +91,7 @@ export default function InterviewPage() {
       try {
         const analysis = JSON.parse(analysisRaw);
         const matched = analysis.career_paths?.find(
-          (p: CareerPath) => p.title === target
+          (p: CareerPath) => p.title === careerTitle
         );
         if (matched) {
           careerDetail = [
@@ -96,7 +132,7 @@ export default function InterviewPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "generate",
-            careerPath: target,
+            careerPath: careerTitle,
             careerDetail,
             userProfile,
           }),
@@ -118,7 +154,7 @@ export default function InterviewPage() {
     }
 
     generateQuestions();
-  }, [router]);
+  }, [phase, careerTitle]);
 
   // 回答添削
   const handleSubmitReview = useCallback(async () => {
@@ -174,6 +210,198 @@ export default function InterviewPage() {
       : score >= 60
         ? "text-yellow-700 bg-yellow-100 border-yellow-300"
         : "text-orange-700 bg-orange-100 border-orange-300";
+
+  // ---------- 依頼先の選択 ----------
+  if (phase === "selecting") {
+    return (
+      <main className="min-h-screen py-10 px-4">
+        <div className="max-w-3xl mx-auto space-y-6">
+          {/* ヘッダー */}
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <Link href="/result">
+              <Button variant="ghost" size="sm" className="gap-1 mb-4">
+                <ArrowLeft className="w-4 h-4" />
+                結果に戻る
+              </Button>
+            </Link>
+            <h1 className="text-2xl font-bold">面接対策</h1>
+            {careerTitle && (
+              <p className="text-muted-foreground mt-1">
+                「{careerTitle}」の面接対策方法を選択してください
+              </p>
+            )}
+          </motion.div>
+
+          {/* 選択カード */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* LINE（無料） */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1, duration: 0.4 }}
+            >
+              <a
+                href={LINE_URL_FREE}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block h-full"
+              >
+                <Card className="h-full border-2 hover:shadow-lg transition-shadow cursor-pointer"
+                  style={{ borderColor: "#06C755" }}
+                >
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <LineIcon className="w-6 h-6 text-[#06C755]" />
+                      無料で転職エージェントに依頼する
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      プロの転職アドバイザーがLINEであなたの面接対策をサポートします。
+                    </p>
+                    <Button
+                      className="w-full gap-2 text-white"
+                      style={{ backgroundColor: "#06C755" }}
+                      asChild
+                    >
+                      <span>
+                        <LineIcon className="w-4 h-4" />
+                        LINEで無料相談する
+                        <ExternalLink className="w-3.5 h-3.5 ml-auto" />
+                      </span>
+                    </Button>
+                  </CardContent>
+                </Card>
+              </a>
+            </motion.div>
+
+            {/* AI（有料） */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.4 }}
+            >
+              <Card
+                className="h-full border-2 border-blue-200 hover:shadow-lg transition-shadow cursor-pointer"
+                onClick={() => setShowPaidDialog(true)}
+              >
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Star className="w-6 h-6 text-blue-500" />
+                    有料でAIに依頼する
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    AIが想定質問を生成し、あなたの回答をリアルタイムで添削します。
+                  </p>
+                  <Button className="w-full gap-2 bg-blue-500 hover:bg-blue-600 text-white">
+                    <Brain className="w-4 h-4" />
+                    AIで面接対策をする
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+
+          {/* LINE説明カード */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35, duration: 0.4 }}
+          >
+            <Card className="bg-[#06C755]/5 border-[#06C755]/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <MessageCircle className="w-5 h-5" style={{ color: "#06C755" }} />
+                  LINE転職エージェントでできること
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#06C755]/10 flex items-center justify-center flex-shrink-0">
+                      <Clock className="w-4 h-4" style={{ color: "#06C755" }} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">最短即日対応</p>
+                      <p className="text-xs text-muted-foreground">
+                        LINEで気軽にいつでも相談OK
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#06C755]/10 flex items-center justify-center flex-shrink-0">
+                      <Users className="w-4 h-4" style={{ color: "#06C755" }} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">模擬面接</p>
+                      <p className="text-xs text-muted-foreground">
+                        プロによる実践的な面接練習
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-full bg-[#06C755]/10 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="w-4 h-4" style={{ color: "#06C755" }} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">回答添削</p>
+                      <p className="text-xs text-muted-foreground">
+                        志望動機・自己PRの添削対応
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+
+        {/* 有料AI準備中ダイアログ */}
+        <Dialog open={showPaidDialog} onOpenChange={setShowPaidDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Star className="w-5 h-5 text-blue-500" />
+                AI面接対策（準備中）
+              </DialogTitle>
+              <DialogDescription>
+                有料AI面接対策は現在準備中です。
+                公式LINEに登録いただくとリリース時にお知らせします。
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 pt-2">
+              <a
+                href={LINE_URL_PAID_PENDING}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Button
+                  className="w-full gap-2 text-white"
+                  style={{ backgroundColor: "#06C755" }}
+                >
+                  <LineIcon className="w-4 h-4" />
+                  公式LINEに登録する
+                  <ExternalLink className="w-3.5 h-3.5 ml-auto" />
+                </Button>
+              </a>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setShowPaidDialog(false)}
+              >
+                閉じる
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </main>
+    );
+  }
 
   // ---------- エラー表示 ----------
   if (error && phase === "loading") {
