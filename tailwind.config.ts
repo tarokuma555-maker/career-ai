@@ -9,6 +9,10 @@ const config: Config = {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			heading: ['var(--font-outfit)', 'var(--font-noto-sans-jp)', 'sans-serif'],
+  			body: ['var(--font-noto-sans-jp)', 'sans-serif'],
+  		},
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
@@ -55,7 +59,17 @@ const config: Config = {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',
   			sm: 'calc(var(--radius) - 4px)'
-  		}
+  		},
+  		backgroundImage: {
+  			'accent-gradient': 'linear-gradient(135deg, #4F46E5 0%, #06B6D4 100%)',
+  			'accent-gradient-hover': 'linear-gradient(135deg, #4338CA 0%, #0891B2 100%)',
+  		},
+  		animation: {
+  			'float': 'float var(--float-duration, 6s) ease-in-out infinite',
+  			'gradient-shift': 'gradient-shift 8s ease infinite',
+  			'pulse-glow': 'pulse-glow 3s ease-in-out infinite',
+  			'typewriter-blink': 'typewriter-blink 0.8s infinite',
+  		},
   	}
   },
   plugins: [require("tailwindcss-animate")],

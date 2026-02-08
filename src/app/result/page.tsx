@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dialog";
 import type { AnalysisResult, CareerPath } from "@/lib/types";
 import { generatePdf } from "@/lib/generate-pdf";
+import PageTransition from "@/components/PageTransition";
 
 const LINE_URL = "https://lin.ee/JlpMkfy";
 
@@ -71,16 +72,15 @@ function CircularScore({ score }: { score: number }) {
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
 
-  const color =
-    score >= 80
-      ? "text-green-500 stroke-green-500"
-      : score >= 60
-        ? "text-yellow-500 stroke-yellow-500"
-        : "text-orange-500 stroke-orange-500";
-
   return (
     <div className="relative w-24 h-24 flex-shrink-0">
       <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+        <defs>
+          <linearGradient id="score-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#4F46E5" />
+            <stop offset="100%" stopColor="#06B6D4" />
+          </linearGradient>
+        </defs>
         <circle
           cx="50"
           cy="50"
@@ -96,7 +96,7 @@ function CircularScore({ score }: { score: number }) {
           fill="none"
           strokeWidth="8"
           strokeLinecap="round"
-          className={color}
+          stroke="url(#score-grad)"
           initial={{ strokeDashoffset: circumference }}
           animate={{ strokeDashoffset: offset }}
           transition={{ duration: 1, ease: "easeOut" }}
@@ -104,7 +104,7 @@ function CircularScore({ score }: { score: number }) {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={`text-xl font-bold ${color.split(" ")[0]}`}>
+        <span className="text-xl font-bold text-[var(--accent-blue)]">
           {score}
         </span>
         <span className="text-[10px] text-muted-foreground">適合度</span>
@@ -138,7 +138,7 @@ function SalaryBar({
       </div>
       <div className="h-3 bg-muted rounded-full overflow-hidden relative">
         <motion.div
-          className="absolute h-full rounded-full bg-primary/70"
+          className="absolute h-full rounded-full bg-accent-gradient"
           initial={{ width: 0 }}
           animate={{ width: `${widthPct}%` }}
           transition={{ duration: 0.8, ease: "easeOut" }}
@@ -245,7 +245,7 @@ function CareerPathCard({
                   <div className="absolute left-[11px] top-1 bottom-1 w-0.5 bg-border" />
                   {path.roadmap.map((item) => (
                     <div key={item.step} className="relative">
-                      <div className="absolute -left-6 top-0.5 w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-medium">
+                      <div className="absolute -left-6 top-0.5 w-5 h-5 rounded-full bg-accent-gradient text-white text-xs flex items-center justify-center font-medium">
                         {item.step}
                       </div>
                       <div>
@@ -472,7 +472,8 @@ export default function ResultPage() {
   }
 
   return (
-    <main className="min-h-screen py-10 px-4">
+    <PageTransition>
+    <main className="relative z-10 min-h-screen py-10 px-4">
       <div className="max-w-4xl mx-auto space-y-8">
         {/* ヘッダー */}
         <motion.div
@@ -480,7 +481,7 @@ export default function ResultPage() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <h1 className="text-3xl font-bold mb-2">
+          <h1 className="text-3xl font-bold font-heading mb-2 bg-accent-gradient bg-clip-text text-transparent">
             あなたへのキャリアプラン
           </h1>
           {diag && (
@@ -600,7 +601,7 @@ export default function ResultPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.65 }}
         >
-          <Card className="bg-primary/5 border-primary/20">
+          <Card className="border-[var(--accent-blue)]/20 bg-gradient-to-br from-[var(--accent-blue)]/5 to-[var(--accent-cyan)]/5">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-primary" />
@@ -743,5 +744,6 @@ export default function ResultPage() {
         </DialogContent>
       </Dialog>
     </main>
+    </PageTransition>
   );
 }

@@ -21,6 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import PageTransition from "@/components/PageTransition";
 import type { AnalysisResult, CareerPath } from "@/lib/types";
 
 // ---------- 円形スコア ----------
@@ -28,20 +29,20 @@ function CircularScore({ score }: { score: number }) {
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
-  const color =
-    score >= 80
-      ? "text-green-500 stroke-green-500"
-      : score >= 60
-        ? "text-yellow-500 stroke-yellow-500"
-        : "text-orange-500 stroke-orange-500";
 
   return (
     <div className="relative w-24 h-24 flex-shrink-0">
       <svg className="w-24 h-24 -rotate-90" viewBox="0 0 100 100">
+        <defs>
+          <linearGradient id="score-grad-share" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#4F46E5" />
+            <stop offset="100%" stopColor="#06B6D4" />
+          </linearGradient>
+        </defs>
         <circle cx="50" cy="50" r={radius} fill="none" strokeWidth="8" className="stroke-muted" />
         <motion.circle
           cx="50" cy="50" r={radius} fill="none" strokeWidth="8" strokeLinecap="round"
-          className={color}
+          stroke="url(#score-grad-share)"
           initial={{ strokeDashoffset: circumference }}
           animate={{ strokeDashoffset: offset }}
           transition={{ duration: 1, ease: "easeOut" }}
@@ -49,7 +50,7 @@ function CircularScore({ score }: { score: number }) {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className={`text-xl font-bold ${color.split(" ")[0]}`}>{score}</span>
+        <span className="text-xl font-bold text-[var(--accent-blue)]">{score}</span>
         <span className="text-[10px] text-muted-foreground">適合度</span>
       </div>
     </div>
@@ -111,7 +112,7 @@ function SharedCareerPathCard({ path, index }: { path: CareerPath; index: number
               <div className="absolute left-[11px] top-1 bottom-1 w-0.5 bg-border" />
               {path.roadmap.map((item) => (
                 <div key={item.step} className="relative">
-                  <div className="absolute -left-6 top-0.5 w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-medium">
+                  <div className="absolute -left-6 top-0.5 w-5 h-5 rounded-full bg-accent-gradient text-white text-xs flex items-center justify-center font-medium">
                     {item.step}
                   </div>
                   <div>
@@ -206,44 +207,49 @@ export default function SharedResultPage() {
   // ローディング
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <div role="status" aria-label="読み込み中" className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </main>
+      <PageTransition>
+        <main className="relative z-10 min-h-screen flex items-center justify-center">
+          <div role="status" aria-label="読み込み中" className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </main>
+      </PageTransition>
     );
   }
 
   // エラー
   if (error || !result) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <Card className="max-w-md w-full">
-            <CardContent className="pt-6 text-center space-y-4">
-              <LinkIcon className="w-12 h-12 text-muted-foreground mx-auto" />
-              <h1 className="text-lg font-bold">
-                このリンクは期限切れか、存在しません
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                {error || "共有データが見つかりませんでした。"}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                共有リンクは作成から30日間有効です。
-              </p>
-              <Link href="/diagnosis">
-                <Button className="mt-2">自分もキャリア診断をする</Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </main>
+      <PageTransition>
+        <main className="relative z-10 min-h-screen flex items-center justify-center px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <Card className="max-w-md w-full">
+              <CardContent className="pt-6 text-center space-y-4">
+                <LinkIcon className="w-12 h-12 text-muted-foreground mx-auto" />
+                <h1 className="text-lg font-bold font-heading">
+                  このリンクは期限切れか、存在しません
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  {error || "共有データが見つかりませんでした。"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  共有リンクは作成から30日間有効です。
+                </p>
+                <Link href="/diagnosis">
+                  <Button className="mt-2">自分もキャリア診断をする</Button>
+                </Link>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </main>
+      </PageTransition>
     );
   }
 
   return (
-    <main className="min-h-screen py-10 px-4">
+    <PageTransition>
+    <main className="relative z-10 min-h-screen py-10 px-4">
       <div className="max-w-4xl mx-auto space-y-8">
         {/* ヘッダー */}
         <motion.div
@@ -257,7 +263,7 @@ export default function SharedResultPage() {
               共有された結果です
             </Badge>
           </div>
-          <h1 className="text-3xl font-bold mb-2">キャリアプラン</h1>
+          <h1 className="text-3xl font-bold font-heading mb-2">キャリアプラン</h1>
           {diag && (
             <div className="flex flex-wrap justify-center gap-2 mt-3">
               {diag.ageRange && <Badge variant="outline">{diag.ageRange}</Badge>}
@@ -293,7 +299,7 @@ export default function SharedResultPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
         >
-          <Card className="bg-primary/5 border-primary/20">
+          <Card className="border-[var(--accent-blue)]/20 bg-gradient-to-br from-[var(--accent-blue)]/5 to-[var(--accent-cyan)]/5">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-primary" />
@@ -321,5 +327,6 @@ export default function SharedResultPage() {
         </motion.div>
       </div>
     </main>
+    </PageTransition>
   );
 }

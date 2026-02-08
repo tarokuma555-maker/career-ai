@@ -90,7 +90,7 @@ function LimitReachedCard({
       className="flex justify-start"
     >
       <div className="max-w-[85%] sm:max-w-[75%]">
-        <div className="bg-muted/60 border rounded-2xl rounded-tl-sm p-5 space-y-4">
+        <div className="glass-card rounded-2xl rounded-tl-sm p-5 space-y-4">
           <div className="text-center space-y-1">
             <MessageSquareOff className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
             <p className="font-semibold text-sm">
@@ -153,15 +153,16 @@ function TypingIndicator() {
   return (
     <div className="flex justify-start">
       <div className="flex items-start gap-2 max-w-[80%]">
-        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-          <Bot className="w-4 h-4 text-primary" />
+        <div className="w-7 h-7 rounded-full bg-accent-gradient flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Bot className="w-4 h-4 text-white" />
         </div>
-        <div className="bg-muted rounded-2xl rounded-tl-sm px-4 py-3">
+        <div className="glass-card rounded-2xl rounded-tl-sm px-4 py-3">
           <div className="flex gap-1.5">
             {[0, 1, 2].map((i) => (
               <motion.div
                 key={i}
-                className="w-2 h-2 bg-muted-foreground/50 rounded-full"
+                className="w-2 h-2 rounded-full"
+                style={{ background: i % 2 === 0 ? "var(--accent-blue)" : "var(--accent-cyan)" }}
                 animate={{ y: [0, -6, 0] }}
                 transition={{
                   duration: 0.6,
@@ -196,13 +197,13 @@ function MessageBubble({ message, index }: { message: Message; index: number }) 
         {/* アイコン */}
         <div
           className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
-            isUser ? "bg-primary" : "bg-primary/10"
+            isUser ? "bg-accent-gradient" : "bg-accent-gradient"
           }`}
         >
           {isUser ? (
-            <User className="w-4 h-4 text-primary-foreground" />
+            <User className="w-4 h-4 text-white" />
           ) : (
-            <Bot className="w-4 h-4 text-primary" />
+            <Bot className="w-4 h-4 text-white" />
           )}
         </div>
 
@@ -210,8 +211,8 @@ function MessageBubble({ message, index }: { message: Message; index: number }) 
         <div
           className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${
             isUser
-              ? "bg-primary text-primary-foreground rounded-tr-sm"
-              : "bg-muted rounded-tl-sm"
+              ? "bg-accent-gradient text-white rounded-tr-sm"
+              : "glass-card rounded-tl-sm"
           }`}
         >
           {message.content}
@@ -411,7 +412,7 @@ export default function ChatPage() {
   return (
     <main className="h-dvh flex flex-col">
       {/* ヘッダー */}
-      <header className="border-b px-4 py-3 flex items-center gap-3 flex-shrink-0">
+      <header className="backdrop-blur-md bg-white/70 border-b border-white/30 px-4 py-3 flex items-center gap-3 flex-shrink-0">
         <Button
           variant="ghost"
           size="icon"
@@ -422,8 +423,8 @@ export default function ChatPage() {
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <div className="flex items-center gap-2 flex-1">
-          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-            <Bot className="w-4 h-4 text-primary" />
+          <div className="w-8 h-8 rounded-full bg-accent-gradient flex items-center justify-center">
+            <Bot className="w-4 h-4 text-white" />
           </div>
           <div>
             <p className="text-sm font-medium leading-tight">キャリアAI</p>
@@ -465,7 +466,7 @@ export default function ChatPage() {
                   <button
                     key={text}
                     onClick={() => handleSuggestion(text)}
-                    className="text-sm border rounded-full px-3 py-1.5 hover:bg-accent transition-colors text-left"
+                    className="text-sm glass-card rounded-full px-3 py-1.5 hover:bg-white/80 transition-colors text-left"
                   >
                     {text}
                   </button>
@@ -486,7 +487,7 @@ export default function ChatPage() {
       </div>
 
       {/* 入力エリア */}
-      <div className="border-t px-4 py-3 flex-shrink-0">
+      <div className="backdrop-blur-md bg-white/70 border-t border-white/30 px-4 py-3 flex-shrink-0">
         <div className="max-w-2xl mx-auto flex items-end gap-2">
           <Textarea
             ref={textareaRef}

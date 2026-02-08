@@ -3,8 +3,10 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Brain, Check, AlertCircle } from "lucide-react";
+import { Check, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import PageTransition from "@/components/PageTransition";
+import AIThinking from "@/components/AIThinking";
 
 const STEPS = [
   { label: "あなたの経歴を分析しています...", delay: 2000 },
@@ -40,24 +42,20 @@ export default function AnalyzingPage() {
       return;
     }
 
-    // API呼び出し（バックグラウンド）
     const apiPromise = fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(diagnosisData),
     });
 
-    // Step 0 → 完了（2秒後）
     await wait(STEPS[0].delay);
     setCompletedSteps((prev) => new Set(prev).add(0));
     setActiveStep(1);
 
-    // Step 1 → 完了（3秒後）
     await wait(STEPS[1].delay);
     setCompletedSteps((prev) => new Set(prev).add(1));
     setActiveStep(2);
 
-    // Step 2 → API完了待ち
     try {
       const res = await apiPromise;
       const data = await res.json();
@@ -70,7 +68,6 @@ export default function AnalyzingPage() {
       apiDone.current = true;
       setCompletedSteps((prev) => new Set(prev).add(2));
 
-      // 結果を保存して遷移（チェックマークを見せるため少し待つ）
       localStorage.setItem("analysisResult", JSON.stringify(data));
       await wait(800);
       router.push("/result");
@@ -91,141 +88,125 @@ export default function AnalyzingPage() {
   };
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center px-4">
-      <motion.div
-        className="w-full max-w-md text-center"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        {/* AI アイコン */}
-        <div className="relative w-20 h-20 mx-auto mb-8">
-          {!error && (
-            <motion.div
-              className="absolute inset-0 rounded-full bg-primary/10"
-              animate={{ scale: [1, 1.3, 1], opacity: [0.5, 0, 0.5] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-            />
-          )}
-          <div
-            className={`relative w-20 h-20 rounded-full flex items-center justify-center ${
-              error ? "bg-destructive/10" : "bg-primary/10"
-            }`}
-          >
+    <PageTransition>
+      <main className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4">
+        <motion.div
+          className="w-full max-w-md text-center"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          {/* AI Thinking / Error Icon */}
+          <div className="mb-8">
             {error ? (
-              <AlertCircle className="w-10 h-10 text-destructive" />
+              <div className="w-20 h-20 mx-auto rounded-full bg-destructive/10 flex items-center justify-center">
+                <AlertCircle className="w-10 h-10 text-destructive" />
+              </div>
             ) : (
-              <motion.div
-                animate={{ rotate: [0, 10, -10, 0] }}
-                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-              >
-                <Brain className="w-10 h-10 text-primary" />
-              </motion.div>
+              <AIThinking text="" />
             )}
           </div>
-        </div>
 
-        <h1 className="text-2xl font-bold mb-2">
-          {error ? "エラーが発生しました" : "AIが分析中です"}
-        </h1>
-        <p className="text-sm text-muted-foreground mb-8">
-          {error
-            ? "分析を完了できませんでした"
-            : "あなたに最適なキャリアプランを作成しています"}
-        </p>
+          <h1 className="font-heading text-2xl font-bold mb-2">
+            {error ? "エラーが発生しました" : "AIが分析中です"}
+          </h1>
+          <p className="text-sm text-muted-foreground mb-8">
+            {error
+              ? "分析を完了できませんでした"
+              : "あなたに最適なキャリアプランを作成しています"}
+          </p>
 
-        {/* プログレスステップ */}
-        <div className="space-y-4 text-left mb-8" role="status" aria-live="polite">
-          {STEPS.map((step, i) => {
-            const isCompleted = completedSteps.has(i);
-            const isActive = i === activeStep && !error;
-            const isPending = i > activeStep || (i === activeStep && error);
+          {/* プログレスステップ */}
+          <div className="space-y-4 text-left mb-8" role="status" aria-live="polite">
+            {STEPS.map((step, i) => {
+              const isCompleted = completedSteps.has(i);
+              const isActive = i === activeStep && !error;
+              const isPending = i > activeStep || (i === activeStep && error);
 
-            return (
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.15, duration: 0.3 }}
+                  className="flex items-center gap-3"
+                >
+                  <div className="flex-shrink-0">
+                    <AnimatePresence mode="wait">
+                      {isCompleted ? (
+                        <motion.div
+                          key="check"
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="w-7 h-7 rounded-full bg-accent-gradient flex items-center justify-center"
+                        >
+                          <Check className="w-4 h-4 text-white" />
+                        </motion.div>
+                      ) : isActive ? (
+                        <motion.div
+                          key="spinner"
+                          className="w-7 h-7 rounded-full border-2 border-[var(--accent-blue)] border-t-transparent"
+                          animate={{ rotate: 360 }}
+                          transition={{
+                            duration: 1,
+                            repeat: Infinity,
+                            ease: "linear",
+                          }}
+                        />
+                      ) : (
+                        <div
+                          key="pending"
+                          className="w-7 h-7 rounded-full border-2 border-muted-foreground/30"
+                        />
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  <span
+                    className={`text-sm ${
+                      isCompleted
+                        ? "text-foreground font-medium"
+                        : isActive
+                          ? "text-foreground"
+                          : isPending
+                            ? "text-muted-foreground"
+                            : "text-muted-foreground"
+                    }`}
+                  >
+                    {step.label}
+                  </span>
+                </motion.div>
+              );
+            })}
+          </div>
+
+          {/* エラー表示 */}
+          <AnimatePresence>
+            {error && (
               <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.15, duration: 0.3 }}
-                className="flex items-center gap-3"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-4"
               >
-                {/* ステータスアイコン */}
-                <div className="flex-shrink-0">
-                  <AnimatePresence mode="wait">
-                    {isCompleted ? (
-                      <motion.div
-                        key="check"
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        className="w-7 h-7 rounded-full bg-primary flex items-center justify-center"
-                      >
-                        <Check className="w-4 h-4 text-primary-foreground" />
-                      </motion.div>
-                    ) : isActive ? (
-                      <motion.div
-                        key="spinner"
-                        className="w-7 h-7 rounded-full border-2 border-primary border-t-transparent"
-                        animate={{ rotate: 360 }}
-                        transition={{
-                          duration: 1,
-                          repeat: Infinity,
-                          ease: "linear",
-                        }}
-                      />
-                    ) : (
-                      <div
-                        key="pending"
-                        className="w-7 h-7 rounded-full border-2 border-muted-foreground/30"
-                      />
-                    )}
-                  </AnimatePresence>
+                <p role="alert" className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
+                  {error}
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <Button onClick={handleRetry}>もう一度試す</Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push("/diagnosis")}
+                  >
+                    診断に戻る
+                  </Button>
                 </div>
-
-                {/* ラベル */}
-                <span
-                  className={`text-sm ${
-                    isCompleted
-                      ? "text-foreground font-medium"
-                      : isActive
-                        ? "text-foreground"
-                        : isPending
-                          ? "text-muted-foreground"
-                          : "text-muted-foreground"
-                  }`}
-                >
-                  {step.label}
-                </span>
               </motion.div>
-            );
-          })}
-        </div>
-
-        {/* エラー表示 */}
-        <AnimatePresence>
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="space-y-4"
-            >
-              <p role="alert" className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
-                {error}
-              </p>
-              <div className="flex gap-3 justify-center">
-                <Button onClick={handleRetry}>もう一度試す</Button>
-                <Button
-                  variant="outline"
-                  onClick={() => router.push("/diagnosis")}
-                >
-                  診断に戻る
-                </Button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-    </main>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      </main>
+    </PageTransition>
   );
 }
 

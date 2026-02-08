@@ -30,6 +30,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import InterviewReviewCard from "@/components/InterviewReviewResult";
+import PageTransition from "@/components/PageTransition";
+import AIThinking from "@/components/AIThinking";
 import type {
   InterviewQuestion,
   RichInterviewResult,
@@ -389,7 +391,8 @@ export default function InterviewPage() {
   // ---------- 依頼先の選択 ----------
   if (phase === "selecting" && careerTitle) {
     return (
-      <main className="min-h-screen py-10 px-4">
+      <PageTransition>
+      <main className="relative z-10 min-h-screen py-10 px-4">
         <div className="max-w-3xl mx-auto space-y-6">
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -401,7 +404,7 @@ export default function InterviewPage() {
                 結果に戻る
               </Button>
             </Link>
-            <h1 className="text-2xl font-bold">面接対策</h1>
+            <h1 className="text-2xl font-bold font-heading">面接対策</h1>
             {careerTitle && (
               <p className="text-muted-foreground mt-1">
                 「{careerTitle}」の面接対策方法を選択してください
@@ -486,7 +489,7 @@ export default function InterviewPage() {
                       AIが回答を添削（月1回無料）
                     </li>
                   </ul>
-                  <Button className="w-full gap-2 bg-blue-500 hover:bg-blue-600 text-white">
+                  <Button className="w-full gap-2">
                     <Brain className="w-4 h-4" />
                     AI面接対策を始める
                   </Button>
@@ -544,13 +547,15 @@ export default function InterviewPage() {
         </div>
         {toast}
       </main>
+      </PageTransition>
     );
   }
 
   // ---------- エラー表示 ----------
   if (error && phase === "loading") {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
+      <PageTransition>
+      <main className="relative z-10 min-h-screen flex items-center justify-center px-4">
         <Card className="max-w-md w-full">
           <CardContent className="pt-6 text-center space-y-4">
             <p className="text-destructive">{error}</p>
@@ -564,37 +569,29 @@ export default function InterviewPage() {
         </Card>
         {toast}
       </main>
+      </PageTransition>
     );
   }
 
   // ---------- ローディング ----------
   if (phase === "loading") {
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <motion.div
-          className="text-center space-y-4"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          role="status"
-          aria-label="質問を生成中"
-        >
-          <div className="relative mx-auto w-16 h-16">
-            <Brain className="w-16 h-16 text-primary" aria-hidden="true" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-primary animate-spin opacity-50" aria-hidden="true" />
-            </div>
-          </div>
-          <p className="text-muted-foreground">面接の想定質問を生成しています...</p>
-        </motion.div>
+      <PageTransition>
+      <main className="relative z-10 min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-4" role="status" aria-label="質問を生成中">
+          <AIThinking text="面接の想定質問を生成しています..." />
+        </div>
         {toast}
       </main>
+      </PageTransition>
     );
   }
 
   // ---------- 質問表示 + 共有 + AI添削導線 ----------
   if (phase === "questions") {
     return (
-      <main className="min-h-screen py-10 px-4">
+      <PageTransition>
+      <main className="relative z-10 min-h-screen py-10 px-4">
         <div className="max-w-3xl mx-auto space-y-6">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <Link href="/result">
@@ -603,7 +600,7 @@ export default function InterviewPage() {
                 結果に戻る
               </Button>
             </Link>
-            <h1 className="text-2xl font-bold">面接 想定質問</h1>
+            <h1 className="text-2xl font-bold font-heading">面接 想定質問</h1>
             <p className="text-muted-foreground mt-1">
               「{careerTitle}」の面接で想定される質問
             </p>
@@ -661,7 +658,7 @@ export default function InterviewPage() {
                     各質問に対する回答を入力すると、AIが添削して改善案を提示します。
                   </p>
                   <Button
-                    className="w-full gap-2 bg-blue-500 hover:bg-blue-600 text-white"
+                    className="w-full gap-2"
                     onClick={() => setPhase("answering")}
                   >
                     <Send className="w-4 h-4" />
@@ -712,7 +709,7 @@ export default function InterviewPage() {
                       <p className="text-xs text-muted-foreground">
                         月額¥980で全質問をAIが添削
                       </p>
-                      <Button className="w-full gap-2 bg-blue-500 hover:bg-blue-600 text-white" disabled>
+                      <Button className="w-full gap-2" disabled>
                         <Star className="w-4 h-4" />
                         プレミアムに加入する（準備中）
                       </Button>
@@ -730,13 +727,15 @@ export default function InterviewPage() {
         </div>
         {toast}
       </main>
+      </PageTransition>
     );
   }
 
   // ---------- 回答入力フェーズ ----------
   if (phase === "answering") {
     return (
-      <main className="min-h-screen py-10 px-4">
+      <PageTransition>
+      <main className="relative z-10 min-h-screen py-10 px-4">
         <div className="max-w-3xl mx-auto space-y-6">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <Button
@@ -748,7 +747,7 @@ export default function InterviewPage() {
               <ArrowLeft className="w-4 h-4" />
               質問一覧に戻る
             </Button>
-            <h1 className="text-2xl font-bold">面接対策</h1>
+            <h1 className="text-2xl font-bold font-heading">面接対策</h1>
             <p className="text-muted-foreground mt-1">
               「{careerTitle}」の想定質問に回答してください
             </p>
@@ -811,23 +810,21 @@ export default function InterviewPage() {
         </div>
         {toast}
       </main>
+      </PageTransition>
     );
   }
 
   // ---------- 添削中 ----------
   if (phase === "reviewing") {
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <motion.div
-          className="text-center space-y-4"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
-          <p className="text-muted-foreground">AIが回答を添削しています...</p>
-        </motion.div>
+      <PageTransition>
+      <main className="relative z-10 min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <AIThinking text="AIが回答を添削しています..." />
+        </div>
         {toast}
       </main>
+      </PageTransition>
     );
   }
 
@@ -836,7 +833,8 @@ export default function InterviewPage() {
     const noRemaining = getInterviewRemaining() === 0;
 
     return (
-      <main className="min-h-screen py-10 px-4">
+      <PageTransition>
+      <main className="relative z-10 min-h-screen py-10 px-4">
         <div className="max-w-3xl mx-auto space-y-8">
           <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <Button
@@ -848,7 +846,7 @@ export default function InterviewPage() {
               <ArrowLeft className="w-4 h-4" />
               質問一覧に戻る
             </Button>
-            <h1 className="text-2xl font-bold">添削結果</h1>
+            <h1 className="text-2xl font-bold font-heading">添削結果</h1>
             <p className="text-muted-foreground mt-1">「{careerTitle}」の面接対策</p>
           </motion.div>
 
@@ -911,6 +909,7 @@ export default function InterviewPage() {
         </div>
         {toast}
       </main>
+      </PageTransition>
     );
   }
 

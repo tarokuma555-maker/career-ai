@@ -33,15 +33,6 @@ function AnimatedCircularScore({
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (animatedScore / 100) * circumference;
 
-  const strokeColor =
-    score >= 90
-      ? "#22c55e"
-      : score >= 70
-        ? "#3b82f6"
-        : score >= 50
-          ? "#f97316"
-          : "#ef4444";
-
   useEffect(() => {
     let frame: number;
     const duration = 1500;
@@ -63,6 +54,12 @@ function AnimatedCircularScore({
   return (
     <div className="relative w-32 h-32 mx-auto">
       <svg className="w-32 h-32 -rotate-90" viewBox="0 0 120 120">
+        <defs>
+          <linearGradient id={`review-score-grad-${score}`} x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#4F46E5" />
+            <stop offset="100%" stopColor="#06B6D4" />
+          </linearGradient>
+        </defs>
         <circle
           cx="60"
           cy="60"
@@ -78,7 +75,7 @@ function AnimatedCircularScore({
           fill="none"
           strokeWidth="10"
           strokeLinecap="round"
-          stroke={strokeColor}
+          stroke={`url(#review-score-grad-${score})`}
           initial={{ strokeDashoffset: circumference }}
           animate={{ strokeDashoffset: offset }}
           transition={{ duration: 1.5, ease: "easeOut" }}
@@ -86,14 +83,13 @@ function AnimatedCircularScore({
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-3xl font-bold" style={{ color: strokeColor }}>
+        <span className="text-3xl font-bold text-[var(--accent-blue)]">
           {animatedScore}
         </span>
         <span className="text-xs text-muted-foreground">/100</span>
         <Badge
           variant="outline"
-          className="mt-1 text-xs font-bold"
-          style={{ borderColor: strokeColor, color: strokeColor }}
+          className="mt-1 text-xs font-bold border-[var(--accent-blue)] text-[var(--accent-blue)]"
         >
           {grade}
         </Badge>
@@ -112,15 +108,6 @@ function BreakdownBar({
   score: number;
   delay: number;
 }) {
-  const color =
-    score >= 80
-      ? "bg-green-500"
-      : score >= 60
-        ? "bg-blue-500"
-        : score >= 40
-          ? "bg-orange-500"
-          : "bg-red-500";
-
   return (
     <div className="space-y-1">
       <div className="flex justify-between text-sm">
@@ -129,7 +116,7 @@ function BreakdownBar({
       </div>
       <div className="h-2.5 bg-muted rounded-full overflow-hidden">
         <motion.div
-          className={`h-full rounded-full ${color}`}
+          className="h-full rounded-full bg-accent-gradient"
           initial={{ width: 0 }}
           animate={{ width: `${score}%` }}
           transition={{ duration: 0.8, delay, ease: "easeOut" }}

@@ -21,6 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import PageTransition from "@/components/PageTransition";
 import type { SharedQuestion } from "@/lib/types";
 
 export default function SharedInterviewPage() {
@@ -71,20 +72,23 @@ export default function SharedInterviewPage() {
   // ローディング
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center">
+      <PageTransition>
+      <main className="relative z-10 min-h-screen flex items-center justify-center">
         <div
           role="status"
           aria-label="読み込み中"
           className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"
         />
       </main>
+      </PageTransition>
     );
   }
 
   // エラー
   if (error || questions.length === 0) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
+      <PageTransition>
+      <main className="relative z-10 min-h-screen flex items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -92,7 +96,7 @@ export default function SharedInterviewPage() {
           <Card className="max-w-md w-full">
             <CardContent className="pt-6 text-center space-y-4">
               <LinkIcon className="w-12 h-12 text-muted-foreground mx-auto" />
-              <h1 className="text-lg font-bold">
+              <h1 className="text-lg font-bold font-heading">
                 このリンクは期限切れか、存在しません
               </h1>
               <p className="text-sm text-muted-foreground">
@@ -108,11 +112,13 @@ export default function SharedInterviewPage() {
           </Card>
         </motion.div>
       </main>
+      </PageTransition>
     );
   }
 
   return (
-    <main className="min-h-screen py-10 px-4">
+    <PageTransition>
+    <main className="relative z-10 min-h-screen py-10 px-4">
       <div className="max-w-3xl mx-auto space-y-6">
         {/* ヘッダー */}
         <motion.div
@@ -126,7 +132,7 @@ export default function SharedInterviewPage() {
               {badgeText}
             </Badge>
           </div>
-          <h1 className="text-2xl font-bold mb-2 flex items-center justify-center gap-2">
+          <h1 className="text-2xl font-bold font-heading mb-2 flex items-center justify-center gap-2">
             <Brain className="w-6 h-6 text-primary" />
             面接対策 想定質問
           </h1>
@@ -307,5 +313,6 @@ export default function SharedInterviewPage() {
         </motion.div>
       </div>
     </main>
+    </PageTransition>
   );
 }

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import PageTransition from "@/components/PageTransition";
 import {
   step1Schema,
   step2Schema,
@@ -233,7 +234,8 @@ export default function DiagnosisPage() {
     ) : null;
 
   return (
-    <main className="min-h-screen flex flex-col items-center px-4 py-12">
+    <PageTransition>
+    <main className="relative z-10 min-h-screen flex flex-col items-center px-4 py-12">
       <div className="w-full max-w-2xl mx-auto">
         {/* ステップインジケーター */}
         <div className="flex items-center justify-center gap-2 sm:gap-4 mb-6">
@@ -672,5 +674,6 @@ export default function DiagnosisPage() {
         </Card>
       </div>
     </main>
+    </PageTransition>
   );
 }
