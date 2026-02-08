@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import type { InterviewQuestion, InterviewResult } from "@/lib/types";
+import type { InterviewQuestion, ReviewData, RichInterviewResult } from "@/lib/types";
 
 // ---------- レート制限（インメモリ / HMR耐性） ----------
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -49,32 +49,65 @@ const GENERATE_SYSTEM_PROMPT = `あなたは経験豊富な日本の面接官・
 - 候補者の現在のスキルや経験を踏まえた実践的な質問にする
 - 日本の転職面接でよく聞かれる形式にする`;
 
-// ---------- システムプロンプト: 回答添削 ----------
-const REVIEW_SYSTEM_PROMPT = `あなたは経験豊富な日本の面接コーチです。
-候補者の面接回答を添削し、改善案を提示してください。
+// ---------- システムプロンプト: 回答添削（per-question） ----------
+function buildReviewPrompt(
+  question: string,
+  userAnswer: string,
+  careerPath: string
+): string {
+  return `あなたは面接対策のプロフェッショナルです。
+以下の面接質問に対するユーザーの回答を添削してください。
 
-以下のJSON形式のみで回答してください。JSON以外のテキストは含めないでください。
+面接質問: ${question}
+ユーザーの回答: ${userAnswer}
+対象キャリアパス: ${careerPath}
+
+以下のJSON形式で回答してください。JSON以外のテキストは含めないでください。
 
 {
-  "reviews": [
+  "score": {
+    "total": 72,
+    "breakdown": {
+      "content": { "score": 80, "label": "内容の充実度" },
+      "structure": { "score": 70, "label": "構成・論理性" },
+      "specificity": { "score": 60, "label": "具体性" },
+      "impression": { "score": 78, "label": "印象・説得力" }
+    },
+    "grade": "B+",
+    "summary": "まずまず良い回答です。具体的な実績を加えるとさらに説得力が増します。"
+  },
+  "improvedAnswer": "（改善後の回答全文をここに書く）",
+  "changes": [
+    { "type": "added", "description": "具体的な経験年数・実績を追加" },
+    { "type": "improved", "description": "受動的な表現 → 能動的な表現に変更" }
+  ],
+  "goodPoints": [
+    "前向きな転職理由を伝えられている",
+    "志望企業への関心を示している"
+  ],
+  "improvementPoints": [
     {
-      "question": "質問文",
-      "original_answer": "元の回答",
-      "improved_answer": "改善された回答（具体例を交えて、STARメソッドを活用）",
-      "score": 70,
-      "feedback": "具体的なフィードバック（良い点と改善点を含む）"
+      "issue": "具体的な数字や実績が不足している",
+      "suggestion": "「3年間で○○のシステムを構築し、パフォーマンスを30%改善した」等"
     }
   ],
-  "overall_score": 65,
-  "overall_advice": "全体的なアドバイス（3〜5文）"
+  "interviewerPerspective": [
+    "自社への不満ではなく前向きな理由か",
+    "自社で実現したいことが明確か",
+    "論理的に説明できるか"
+  ]
 }
 
 ルール：
-- score は 0〜100 の整数（100が最高評価）
-- overall_score は各回答のスコアを総合的に判断した値
-- improved_answer は元の回答をベースに大幅に改善したバージョン
-- feedback には必ず「良い点」と「改善すべき点」の両方を含める
-- overall_advice は全体を通しての改善ポイントを簡潔にまとめる`;
+- score.total は 0〜100 の整数
+- breakdown の各項目も 0〜100
+- grade は S/A+/A/B+/B/C+/C/D のいずれか
+- improvedAnswer は元の回答をベースに大幅に改善した全文
+- changes は最低2つ、最大5つ
+- goodPoints は最低1つ
+- improvementPoints は最低1つ、各項目に issue と suggestion を含める
+- interviewerPerspective は最低2つ`;
+}
 
 // ---------- JSONパース（フォールバック付き） ----------
 function parseJsonResponse<T>(text: string): T {
@@ -195,38 +228,37 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const qaPairs = body.questions
-        .map(
-          (qa, i) =>
-            `【質問${i + 1}】${qa.question}\n【回答${i + 1}】${qa.answer}`
-        )
-        .join("\n\n");
+      // 各質問を並列で添削
+      const reviewPromises = body.questions.map(async (qa) => {
+        const prompt = buildReviewPrompt(
+          qa.question,
+          qa.answer,
+          body.careerPath ?? ""
+        );
 
-      const userMessage = [
-        `対象キャリアパス: ${body.careerPath}`,
-        "",
-        "以下の質問と回答を添削してください。",
-        "",
-        qaPairs,
-      ].join("\n");
+        const message = await client.messages.create({
+          model: "claude-sonnet-4-5-20250929",
+          max_tokens: 4096,
+          system: prompt,
+          messages: [{ role: "user", content: "この回答を添削してください。" }],
+        });
 
-      const message = await client.messages.create({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 4096,
-        system: REVIEW_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userMessage }],
+        const textBlock = message.content.find((b) => b.type === "text");
+        if (!textBlock || textBlock.type !== "text") {
+          throw new Error("AIからの応答が空でした。");
+        }
+
+        const reviewData = parseJsonResponse<ReviewData>(textBlock.text);
+        return {
+          question: qa.question,
+          userAnswer: qa.answer,
+          reviewData,
+        };
       });
 
-      const textBlock = message.content.find((b) => b.type === "text");
-      if (!textBlock || textBlock.type !== "text") {
-        return NextResponse.json(
-          { error: "AIからの応答が空でした。" },
-          { status: 502 }
-        );
-      }
-
-      const parsed = parseJsonResponse<InterviewResult>(textBlock.text);
-      return NextResponse.json(parsed);
+      const reviews = await Promise.all(reviewPromises);
+      const result: RichInterviewResult = { reviews };
+      return NextResponse.json(result);
     }
 
     return NextResponse.json(

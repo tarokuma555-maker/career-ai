@@ -13,7 +13,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { InterviewQuestion } from "@/lib/types";
+import InterviewReviewCard from "@/components/InterviewReviewResult";
+import type { InterviewQuestion, RichInterviewResult } from "@/lib/types";
 
 export default function SharedInterviewPage() {
   const params = useParams();
@@ -21,6 +22,9 @@ export default function SharedInterviewPage() {
 
   const [careerTitle, setCareerTitle] = useState("");
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
+  const [reviewResult, setReviewResult] = useState<RichInterviewResult | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -39,6 +43,9 @@ export default function SharedInterviewPage() {
 
         setCareerTitle(data.careerTitle);
         setQuestions(data.questions);
+        if (data.reviewResult) {
+          setReviewResult(data.reviewResult);
+        }
       } catch {
         setError("通信エラーが発生しました。");
       } finally {
@@ -104,7 +111,9 @@ export default function SharedInterviewPage() {
           <div className="flex justify-center mb-3">
             <Badge variant="outline" className="gap-1.5 px-3 py-1">
               <Share2 className="w-3.5 h-3.5" />
-              共有された面接質問です
+              {reviewResult
+                ? "共有された面接対策結果です"
+                : "共有された面接質問です"}
             </Badge>
           </div>
           <h1 className="text-2xl font-bold mb-2 flex items-center justify-center gap-2">
@@ -116,29 +125,47 @@ export default function SharedInterviewPage() {
           </p>
         </motion.div>
 
-        {/* 質問一覧 */}
-        {questions.map((q, i) => (
-          <motion.div
-            key={q.id}
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1, duration: 0.3 }}
-          >
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-start gap-3">
-                  <Badge
-                    variant="outline"
-                    className="flex-shrink-0 mt-0.5"
-                  >
-                    Q{q.id}
-                  </Badge>
-                  <span>{q.question}</span>
-                </CardTitle>
-              </CardHeader>
-            </Card>
-          </motion.div>
-        ))}
+        {/* 添削結果がある場合 → リッチUI */}
+        {reviewResult ? (
+          <div className="space-y-8">
+            {reviewResult.reviews.map((review, i) => (
+              <InterviewReviewCard
+                key={i}
+                question={review.question}
+                userAnswer={review.userAnswer}
+                reviewData={review.reviewData}
+                index={i}
+                readOnly
+              />
+            ))}
+          </div>
+        ) : (
+          /* 質問のみの場合 */
+          <>
+            {questions.map((q, i) => (
+              <motion.div
+                key={q.id}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1, duration: 0.3 }}
+              >
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-start gap-3">
+                      <Badge
+                        variant="outline"
+                        className="flex-shrink-0 mt-0.5"
+                      >
+                        Q{q.id}
+                      </Badge>
+                      <span>{q.question}</span>
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+              </motion.div>
+            ))}
+          </>
+        )}
 
         {/* CTA */}
         <motion.div
@@ -148,7 +175,7 @@ export default function SharedInterviewPage() {
           transition={{ delay: 0.6 }}
         >
           <Link href="/diagnosis">
-            <Button size="lg">自分もキャリア診断をする</Button>
+            <Button size="lg">キャリアAIで自分も面接対策する</Button>
           </Link>
         </motion.div>
       </div>

@@ -10,7 +10,6 @@ import {
   ArrowLeft,
   Send,
   CheckCircle2,
-  ArrowRight,
   ExternalLink,
   Star,
   Clock,
@@ -30,10 +29,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
+import InterviewReviewCard from "@/components/InterviewReviewResult";
 import type {
   InterviewQuestion,
-  InterviewResult,
+  RichInterviewResult,
   CareerPath,
 } from "@/lib/types";
 import {
@@ -58,20 +57,6 @@ function LineIcon({ className }: { className?: string }) {
   );
 }
 
-const scoreColor = (score: number) =>
-  score >= 80
-    ? "bg-green-500"
-    : score >= 60
-      ? "bg-yellow-500"
-      : "bg-orange-500";
-
-const scoreBadgeVariant = (score: number) =>
-  score >= 80
-    ? "text-green-700 bg-green-100 border-green-300"
-    : score >= 60
-      ? "text-yellow-700 bg-yellow-100 border-yellow-300"
-      : "text-orange-700 bg-orange-100 border-orange-300";
-
 type Phase =
   | "selecting"
   | "loading"
@@ -86,7 +71,7 @@ export default function InterviewPage() {
   const [careerTitle, setCareerTitle] = useState("");
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [result, setResult] = useState<InterviewResult | null>(null);
+  const [result, setResult] = useState<RichInterviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // 共有関連
@@ -305,7 +290,7 @@ export default function InterviewPage() {
         throw new Error(data.error || "添削に失敗しました。");
       }
 
-      const data: InterviewResult = await res.json();
+      const data: RichInterviewResult = await res.json();
       setResult(data);
       setPhase("result");
     } catch (err) {
@@ -319,6 +304,62 @@ export default function InterviewPage() {
   const allAnswered =
     questions.length > 0 &&
     questions.every((q) => (answers[q.id] ?? "").trim().length > 0);
+
+  // 添削結果をエージェントに共有
+  const handleShareReview = useCallback(async () => {
+    if (isSharingRef.current) return;
+    isSharingRef.current = true;
+    setIsSharing(true);
+
+    try {
+      const res = await fetch("/api/share-interview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          careerTitle,
+          questions,
+          reviewResult: result,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "共有リンクの作成に失敗しました。");
+      }
+
+      const data = await res.json();
+      const interviewShareUrl = `${window.location.origin}/interview/share/${data.shareId}`;
+
+      const resultShareRaw = localStorage.getItem("lastResultShareUrl");
+      const message = [
+        "キャリアAIの面接対策結果を共有します。",
+        "",
+        `🎤 想定質問＆添削結果: ${interviewShareUrl}`,
+        ...(resultShareRaw ? [`📊 診断結果: ${resultShareRaw}`] : []),
+      ].join("\n");
+
+      try {
+        await navigator.clipboard.writeText(message);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 3000);
+      } catch {
+        // fallback
+      }
+
+      window.open(
+        "https://lin.ee/JlpMkfy?utm_source=career-ai&utm_medium=interview-review-share",
+        "_blank",
+        "noopener,noreferrer"
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "共有リンクの作成に失敗しました。"
+      );
+    } finally {
+      isSharingRef.current = false;
+      setIsSharing(false);
+    }
+  }, [careerTitle, questions, result]);
 
   // ---------- 依頼先の選択 ----------
   if (phase === "selecting" && careerTitle) {
@@ -846,7 +887,7 @@ export default function InterviewPage() {
 
     return (
       <main className="min-h-screen py-10 px-4">
-        <div className="max-w-3xl mx-auto space-y-6">
+        <div className="max-w-3xl mx-auto space-y-8">
           {/* ヘッダー */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -867,131 +908,15 @@ export default function InterviewPage() {
             </p>
           </motion.div>
 
-          {/* 総合スコア */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          >
-            <Card className="bg-primary/5 border-primary/20">
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold">総合スコア</h2>
-                  <span
-                    className={`text-3xl font-bold ${
-                      result.overall_score >= 80
-                        ? "text-green-600"
-                        : result.overall_score >= 60
-                          ? "text-yellow-600"
-                          : "text-orange-600"
-                    }`}
-                  >
-                    {result.overall_score}
-                    <span className="text-base text-muted-foreground">
-                      /100
-                    </span>
-                  </span>
-                </div>
-                <Progress
-                  value={result.overall_score}
-                  className="h-3 mb-4"
-                />
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {result.overall_advice}
-                </p>
-              </CardContent>
-            </Card>
-          </motion.div>
-
-          {/* 各問の添削結果 */}
+          {/* 各問の添削結果（リッチUI） */}
           {result.reviews.map((review, i) => (
-            <motion.div
+            <InterviewReviewCard
               key={i}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 + i * 0.1, duration: 0.3 }}
-            >
-              <Card>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <CardTitle className="text-base flex items-start gap-3">
-                      <Badge
-                        variant="outline"
-                        className="flex-shrink-0 mt-0.5"
-                      >
-                        Q{i + 1}
-                      </Badge>
-                      <span>{review.question}</span>
-                    </CardTitle>
-                    <Badge
-                      className={`flex-shrink-0 border ${scoreBadgeVariant(review.score)}`}
-                    >
-                      {review.score}点
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Before */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-2 h-2 rounded-full bg-orange-400" />
-                      <span className="text-sm font-medium text-muted-foreground">
-                        あなたの回答
-                      </span>
-                    </div>
-                    <div className="bg-muted/50 rounded-lg p-3 text-sm whitespace-pre-wrap">
-                      {review.original_answer}
-                    </div>
-                  </div>
-
-                  <div className="flex justify-center">
-                    <ArrowRight className="w-4 h-4 text-muted-foreground rotate-90" />
-                  </div>
-
-                  {/* After */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-2 h-2 rounded-full bg-green-400" />
-                      <span className="text-sm font-medium text-muted-foreground">
-                        改善例
-                      </span>
-                    </div>
-                    <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900/30 rounded-lg p-3 text-sm whitespace-pre-wrap">
-                      {review.improved_answer}
-                    </div>
-                  </div>
-
-                  {/* フィードバック */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <CheckCircle2 className="w-4 h-4 text-primary" />
-                      <span className="text-sm font-medium">
-                        フィードバック
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                      {review.feedback}
-                    </p>
-                  </div>
-
-                  {/* スコアバー */}
-                  <div className="pt-1">
-                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                      <span>スコア</span>
-                      <span>{review.score}/100</span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <motion.div
-                        className={`h-full rounded-full ${scoreColor(review.score)}`}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${review.score}%` }}
-                        transition={{ duration: 0.8, ease: "easeOut" }}
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
+              question={review.question}
+              userAnswer={review.userAnswer}
+              reviewData={review.reviewData}
+              index={i}
+            />
           ))}
 
           {/* 無料枠使い切り警告 */}
@@ -1033,25 +958,52 @@ export default function InterviewPage() {
 
           {/* アクションボタン */}
           <motion.div
-            className="flex flex-col sm:flex-row justify-center gap-3 pt-4 pb-8"
+            className="flex flex-col gap-3 pt-4 pb-8"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.9 }}
           >
             <Button
               size="lg"
-              variant="outline"
-              className="gap-2"
-              onClick={() => setPhase("questions")}
+              className="w-full gap-2 text-white"
+              style={{ backgroundColor: "#06C755" }}
+              onClick={handleShareReview}
+              disabled={isSharing}
             >
-              <ArrowLeft className="w-4 h-4" />
-              質問一覧に戻る
+              {isSharing ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : copied ? (
+                <Check className="w-4 h-4" />
+              ) : (
+                <LineIcon className="w-4 h-4" />
+              )}
+              {copied
+                ? "URLがコピーされました"
+                : "添削結果をエージェントに共有する"}
             </Button>
-            <Link href="/result">
-              <Button size="lg" variant="outline" className="w-full gap-2">
-                結果ページに戻る
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                size="lg"
+                variant="outline"
+                className="flex-1 gap-2"
+                onClick={() => setPhase("questions")}
+              >
+                <ArrowLeft className="w-4 h-4" />
+                質問一覧に戻る
               </Button>
-            </Link>
+              <Link href="/result" className="flex-1">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full gap-2"
+                >
+                  結果ページに戻る
+                </Button>
+              </Link>
+            </div>
+            <p className="text-xs text-center text-muted-foreground">
+              AI添削 残り {getInterviewRemaining()}/1 回（今月）
+            </p>
           </motion.div>
         </div>
       </main>

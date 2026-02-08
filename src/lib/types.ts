@@ -40,3 +40,48 @@ export interface InterviewResult {
   overall_score: number;
   overall_advice: string;
 }
+
+// ---------- リッチ添削結果 ----------
+export interface ReviewScoreBreakdownItem {
+  score: number;
+  label: string;
+}
+
+export interface ReviewScore {
+  total: number;
+  breakdown: {
+    content: ReviewScoreBreakdownItem;
+    structure: ReviewScoreBreakdownItem;
+    specificity: ReviewScoreBreakdownItem;
+    impression: ReviewScoreBreakdownItem;
+  };
+  grade: string;
+  summary: string;
+}
+
+export interface ReviewChange {
+  type: "added" | "improved" | "removed";
+  description: string;
+}
+
+export interface ReviewImprovementPoint {
+  issue: string;
+  suggestion: string;
+}
+
+export interface ReviewData {
+  score: ReviewScore;
+  improvedAnswer: string;
+  changes: ReviewChange[];
+  goodPoints: string[];
+  improvementPoints: ReviewImprovementPoint[];
+  interviewerPerspective: string[];
+}
+
+export interface RichInterviewResult {
+  reviews: {
+    question: string;
+    userAnswer: string;
+    reviewData: ReviewData;
+  }[];
+}

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { nanoid } from "nanoid";
-import type { InterviewQuestion } from "@/lib/types";
+import type { InterviewQuestion, RichInterviewResult } from "@/lib/types";
 
 // ---------- 定数 ----------
 const KV_PREFIX = "career-ai:interview:";
@@ -36,6 +36,7 @@ function isRateLimited(ip: string): boolean {
 interface ShareInterviewData {
   careerTitle: string;
   questions: InterviewQuestion[];
+  reviewResult?: RichInterviewResult;
   createdAt: number;
 }
 
@@ -53,7 +54,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { careerTitle?: string; questions?: InterviewQuestion[] };
+  let body: {
+    careerTitle?: string;
+    questions?: InterviewQuestion[];
+    reviewResult?: RichInterviewResult;
+  };
   try {
     body = await request.json();
   } catch {
@@ -70,9 +75,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ペイロードサイズ制限（100KB）
+  // ペイロードサイズ制限（500KB - 添削結果含む場合があるため）
   const payloadSize = JSON.stringify(body).length;
-  if (payloadSize > 100_000) {
+  if (payloadSize > 500_000) {
     return NextResponse.json(
       { error: "データサイズが大きすぎます。" },
       { status: 413 }
@@ -83,6 +88,7 @@ export async function POST(request: NextRequest) {
   const data: ShareInterviewData = {
     careerTitle: body.careerTitle,
     questions: body.questions,
+    reviewResult: body.reviewResult,
     createdAt: Date.now(),
   };
 
@@ -127,6 +133,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       careerTitle: data.careerTitle,
       questions: data.questions,
+      reviewResult: data.reviewResult,
     });
   } catch (err) {
     console.error("KV read error:", err);
