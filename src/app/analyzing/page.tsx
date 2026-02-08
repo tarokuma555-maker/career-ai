@@ -135,7 +135,7 @@ export default function AnalyzingPage() {
         </p>
 
         {/* プログレスステップ */}
-        <div className="space-y-4 text-left mb-8">
+        <div className="space-y-4 text-left mb-8" role="status" aria-live="polite">
           {STEPS.map((step, i) => {
             const isCompleted = completedSteps.has(i);
             const isActive = i === activeStep && !error;
@@ -209,7 +209,7 @@ export default function AnalyzingPage() {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-4"
             >
-              <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
+              <p role="alert" className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
                 {error}
               </p>
               <div className="flex gap-3 justify-center">

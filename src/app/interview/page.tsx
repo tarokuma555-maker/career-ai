@@ -58,6 +58,20 @@ function LineIcon({ className }: { className?: string }) {
   );
 }
 
+const scoreColor = (score: number) =>
+  score >= 80
+    ? "bg-green-500"
+    : score >= 60
+      ? "bg-yellow-500"
+      : "bg-orange-500";
+
+const scoreBadgeVariant = (score: number) =>
+  score >= 80
+    ? "text-green-700 bg-green-100 border-green-300"
+    : score >= 60
+      ? "text-yellow-700 bg-yellow-100 border-yellow-300"
+      : "text-orange-700 bg-orange-100 border-orange-300";
+
 type Phase = "selecting" | "loading" | "answering" | "reviewing" | "result";
 
 export default function InterviewPage() {
@@ -197,22 +211,8 @@ export default function InterviewPage() {
     questions.length > 0 &&
     questions.every((q) => (answers[q.id] ?? "").trim().length > 0);
 
-  const scoreColor = (score: number) =>
-    score >= 80
-      ? "bg-green-500"
-      : score >= 60
-        ? "bg-yellow-500"
-        : "bg-orange-500";
-
-  const scoreBadgeVariant = (score: number) =>
-    score >= 80
-      ? "text-green-700 bg-green-100 border-green-300"
-      : score >= 60
-        ? "text-yellow-700 bg-yellow-100 border-yellow-300"
-        : "text-orange-700 bg-orange-100 border-orange-300";
-
   // ---------- 依頼先の選択 ----------
-  if (phase === "selecting") {
+  if (phase === "selecting" && careerTitle) {
     return (
       <main className="min-h-screen py-10 px-4">
         <div className="max-w-3xl mx-auto space-y-6">
@@ -430,11 +430,13 @@ export default function InterviewPage() {
           className="text-center space-y-4"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
+          role="status"
+          aria-label="質問を生成中"
         >
           <div className="relative mx-auto w-16 h-16">
-            <Brain className="w-16 h-16 text-primary" />
+            <Brain className="w-16 h-16 text-primary" aria-hidden="true" />
             <div className="absolute inset-0 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 text-primary animate-spin opacity-50" />
+              <Loader2 className="w-8 h-8 text-primary animate-spin opacity-50" aria-hidden="true" />
             </div>
           </div>
           <p className="text-muted-foreground">
@@ -491,6 +493,7 @@ export default function InterviewPage() {
                   <Textarea
                     placeholder="あなたの回答を入力してください..."
                     aria-label={`質問${q.id}への回答`}
+                    maxLength={2000}
                     rows={4}
                     value={answers[q.id] ?? ""}
                     onChange={(e) =>

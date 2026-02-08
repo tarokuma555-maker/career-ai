@@ -112,6 +112,31 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // メッセージ構造のバリデーション
+  const validRoles = new Set(["user", "assistant"]);
+  const validatedMessages = messages.filter(
+    (m): m is ChatMessage =>
+      m &&
+      typeof m === "object" &&
+      typeof m.content === "string" &&
+      validRoles.has(m.role)
+  );
+  if (validatedMessages.length === 0) {
+    return new Response(
+      JSON.stringify({ error: "有効なメッセージがありません。" }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  // メッセージ長の制限（合計 50,000 文字まで）
+  const totalLength = validatedMessages.reduce((sum, m) => sum + m.content.length, 0);
+  if (totalLength > 50000) {
+    return new Response(
+      JSON.stringify({ error: "メッセージが長すぎます。" }),
+      { status: 400, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   const client = new Anthropic({ apiKey });
   const systemPrompt = buildSystemPrompt(diagnosisData, analysisResult);
 
@@ -120,7 +145,7 @@ export async function POST(request: NextRequest) {
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 1024,
       system: systemPrompt,
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: validatedMessages.map((m) => ({ role: m.role, content: m.content })),
     });
 
     const encoder = new TextEncoder();
@@ -144,7 +169,7 @@ export async function POST(request: NextRequest) {
         } catch (err) {
           const message =
             err instanceof Anthropic.APIError
-              ? `API呼び出しに失敗しました: ${err.message}`
+              ? "API呼び出しに失敗しました。しばらく後にお試しください。"
               : "予期しないエラーが発生しました。";
           const errData = JSON.stringify({ error: message });
           controller.enqueue(
@@ -170,7 +195,7 @@ export async function POST(request: NextRequest) {
           ? "APIのレート制限に達しました。しばらく待ってから再度お試しください。"
           : status === 401
             ? "APIキーが無効です。正しいAPIキーを設定してください。"
-            : `API呼び出しに失敗しました: ${error.message}`;
+            : "API呼び出しに失敗しました。しばらく後にお試しください。";
       return new Response(JSON.stringify({ error: msg }), {
         status,
         headers: { "Content-Type": "application/json" },

@@ -436,7 +436,7 @@ export default function ChatPage() {
       </header>
 
       {/* メッセージエリア */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4" role="log" aria-label="チャットメッセージ">
         {messages.map((msg, i) => (
           <MessageBubble key={i} message={msg} index={i} />
         ))}
@@ -499,8 +499,9 @@ export default function ChatPage() {
                 : "メッセージを入力..."
             }
             disabled={isStreaming || isLimited}
+            maxLength={2000}
             rows={1}
-            className={`min-h-[40px] max-h-[120px] resize-none ${
+            className={`min-h-[44px] max-h-[120px] resize-none ${
               isLimited ? "opacity-50 cursor-not-allowed" : ""
             }`}
           />

@@ -229,7 +229,7 @@ export default function DiagnosisPage() {
 
   const FieldError = ({ name }: { name: string }) =>
     errors[name] ? (
-      <p className="text-sm text-destructive mt-1">{errors[name]}</p>
+      <p role="alert" className="text-sm text-destructive mt-1">{errors[name]}</p>
     ) : null;
 
   return (
@@ -282,7 +282,7 @@ export default function DiagnosisPage() {
           <p className="text-sm text-muted-foreground mb-2">
             Step {currentStep + 1} / {STEPS.length}: {STEPS[currentStep].title}
           </p>
-          <Progress value={progress} className="h-2" />
+          <Progress value={progress} className="h-2" aria-label={`診断の進捗: ステップ${currentStep + 1}/${STEPS.length}`} />
         </div>
 
         {/* フォームカード */}
@@ -468,6 +468,9 @@ export default function DiagnosisPage() {
                         {SKILL_OPTIONS.map((skill) => (
                           <Badge
                             key={skill}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={formData.skills.includes(skill)}
                             variant={
                               formData.skills.includes(skill)
                                 ? "default"
@@ -475,6 +478,7 @@ export default function DiagnosisPage() {
                             }
                             className="cursor-pointer select-none transition-colors"
                             onClick={() => toggleArrayItem("skills", skill)}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleArrayItem("skills", skill); } }}
                           >
                             {skill}
                           </Badge>
@@ -489,12 +493,15 @@ export default function DiagnosisPage() {
                           .map((skill) => (
                             <Badge
                               key={skill}
+                              role="button"
+                              tabIndex={0}
                               variant="default"
                               className="cursor-pointer select-none gap-1"
                               onClick={() => toggleArrayItem("skills", skill)}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleArrayItem("skills", skill); } }}
                             >
                               {skill}
-                              <X className="w-3 h-3" />
+                              <X className="w-3 h-3" aria-hidden="true" />
                             </Badge>
                           ))}
                       </div>
@@ -517,6 +524,7 @@ export default function DiagnosisPage() {
                           variant="outline"
                           size="icon"
                           onClick={addCustomSkill}
+                          aria-label="スキルを追加"
                         >
                           <Plus className="w-4 h-4" />
                         </Button>
@@ -551,6 +559,9 @@ export default function DiagnosisPage() {
                         {CAREER_CONCERNS.map((concern) => (
                           <Badge
                             key={concern}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={formData.concerns.includes(concern)}
                             variant={
                               formData.concerns.includes(concern)
                                 ? "default"
@@ -558,6 +569,7 @@ export default function DiagnosisPage() {
                             }
                             className="cursor-pointer select-none transition-colors"
                             onClick={() => toggleArrayItem("concerns", concern)}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleArrayItem("concerns", concern); } }}
                           >
                             {concern}
                           </Badge>
@@ -572,25 +584,27 @@ export default function DiagnosisPage() {
                         <span className="text-destructive">*</span>
                       </label>
                       <div className="flex flex-wrap gap-2">
-                        {VALUES.map((value) => (
-                          <Badge
-                            key={value}
-                            variant={
-                              formData.values.includes(value)
-                                ? "default"
-                                : "outline"
-                            }
-                            className={`cursor-pointer select-none transition-colors ${
-                              !formData.values.includes(value) &&
-                              formData.values.length >= 3
-                                ? "opacity-50 cursor-not-allowed"
-                                : ""
-                            }`}
-                            onClick={() => toggleArrayItem("values", value, 3)}
-                          >
-                            {value}
-                          </Badge>
-                        ))}
+                        {VALUES.map((value) => {
+                          const selected = formData.values.includes(value);
+                          const disabled = !selected && formData.values.length >= 3;
+                          return (
+                            <Badge
+                              key={value}
+                              role="button"
+                              tabIndex={disabled ? -1 : 0}
+                              aria-pressed={selected}
+                              aria-disabled={disabled}
+                              variant={selected ? "default" : "outline"}
+                              className={`cursor-pointer select-none transition-colors ${
+                                disabled ? "opacity-50 cursor-not-allowed" : ""
+                              }`}
+                              onClick={() => toggleArrayItem("values", value, 3)}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleArrayItem("values", value, 3); } }}
+                            >
+                              {value}
+                            </Badge>
+                          );
+                        })}
                       </div>
                       {formData.values.length > 0 && (
                         <p className="text-xs text-muted-foreground mt-1">

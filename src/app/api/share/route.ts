@@ -70,6 +70,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // ペイロードサイズ制限（500KB）
+  const payloadSize = JSON.stringify(body).length;
+  if (payloadSize > 500_000) {
+    return NextResponse.json(
+      { error: "データサイズが大きすぎます。" },
+      { status: 413 }
+    );
+  }
+
   const shareId = nanoid(12);
   const data: ShareData = {
     analysisResult: body.analysisResult,

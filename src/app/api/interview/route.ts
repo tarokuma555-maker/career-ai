@@ -149,6 +149,13 @@ export async function POST(request: NextRequest) {
 
   try {
     if (body.action === "generate") {
+      if (!body.careerPath || typeof body.careerPath !== "string" || body.careerPath.trim().length === 0) {
+        return NextResponse.json(
+          { error: "キャリアパスが指定されていません。" },
+          { status: 400 }
+        );
+      }
+
       const userMessage = [
         `対象キャリアパス: ${body.careerPath}`,
         "",
@@ -240,8 +247,9 @@ export async function POST(request: NextRequest) {
           { status: 401 }
         );
       }
+      console.error("Anthropic API error:", error.message);
       return NextResponse.json(
-        { error: `API呼び出しに失敗しました: ${error.message}` },
+        { error: "API呼び出しに失敗しました。しばらく後にお試しください。" },
         { status: error.status ?? 500 }
       );
     }

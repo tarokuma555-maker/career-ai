@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -218,6 +218,7 @@ function CareerPathCard({
             size="sm"
             className="w-full"
             onClick={() => setExpanded(!expanded)}
+            aria-expanded={expanded}
           >
             {expanded ? (
               <>
@@ -351,9 +352,11 @@ export default function ResultPage() {
   const router = useRouter();
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const isGeneratingPdfRef = useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [diag, setDiag] = useState<Record<string, any> | null>(null);
   const [isSharing, setIsSharing] = useState(false);
+  const isSharingRef = useRef(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -379,7 +382,8 @@ export default function ResultPage() {
   }, [router]);
 
   const handleDownloadPdf = useCallback(async () => {
-    if (!result || isGeneratingPdf) return;
+    if (!result || isGeneratingPdfRef.current) return;
+    isGeneratingPdfRef.current = true;
     setIsGeneratingPdf(true);
     try {
       await generatePdf(result, diag ?? undefined);
@@ -387,12 +391,14 @@ export default function ResultPage() {
       console.error("PDF generation failed:", err);
       alert("PDFの生成に失敗しました。もう一度お試しください。");
     } finally {
+      isGeneratingPdfRef.current = false;
       setIsGeneratingPdf(false);
     }
-  }, [result, isGeneratingPdf, diag]);
+  }, [result, diag]);
 
   const handleShare = useCallback(async () => {
-    if (!result || isSharing) return;
+    if (!result || isSharingRef.current) return;
+    isSharingRef.current = true;
     setIsSharing(true);
     setCopied(false);
     try {
@@ -416,9 +422,10 @@ export default function ResultPage() {
         err instanceof Error ? err.message : "共有リンクの作成に失敗しました。"
       );
     } finally {
+      isSharingRef.current = false;
       setIsSharing(false);
     }
-  }, [result, isSharing, diag]);
+  }, [result, diag]);
 
   const handleCopyUrl = useCallback(async () => {
     if (!shareUrl) return;
@@ -439,26 +446,30 @@ export default function ResultPage() {
     }
   }, [shareUrl]);
 
+  // レーダーチャート用データ
+  const { allSkillKeys, radarData } = useMemo(() => {
+    if (!result) return { allSkillKeys: [] as string[], radarData: [] as { skill: string; 現在: number; 目標: number }[] };
+    const keys = Array.from(
+      new Set([
+        ...Object.keys(result.skill_analysis.current_skills),
+        ...Object.keys(result.skill_analysis.target_skills),
+      ])
+    );
+    const data = keys.map((skill) => ({
+      skill,
+      現在: result.skill_analysis.current_skills[skill] ?? 0,
+      目標: result.skill_analysis.target_skills[skill] ?? 0,
+    }));
+    return { allSkillKeys: keys, radarData: data };
+  }, [result]);
+
   if (!result) {
     return (
       <main className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <div role="status" aria-label="読み込み中" className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
       </main>
     );
   }
-
-  // レーダーチャート用データ
-  const allSkillKeys = Array.from(
-    new Set([
-      ...Object.keys(result.skill_analysis.current_skills),
-      ...Object.keys(result.skill_analysis.target_skills),
-    ])
-  );
-  const radarData = allSkillKeys.map((skill) => ({
-    skill,
-    現在: result.skill_analysis.current_skills[skill] ?? 0,
-    目標: result.skill_analysis.target_skills[skill] ?? 0,
-  }));
 
   return (
     <main className="min-h-screen py-10 px-4">
@@ -709,7 +720,7 @@ export default function ResultPage() {
               <input
                 readOnly
                 value={shareUrl ?? ""}
-                className="flex-1 rounded-md border bg-muted px-3 py-2 text-sm"
+                className="flex-1 min-w-0 rounded-md border bg-muted px-3 py-2 text-sm truncate"
               />
               <Button
                 size="sm"

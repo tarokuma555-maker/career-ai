@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "APIキーが設定されていません。.env.local にANTHROPIC_API_KEYを設定してください。" },
+      { error: "サーバーの設定に問題があります。管理者にお問い合わせください。" },
       { status: 500 }
     );
   }
@@ -216,8 +216,9 @@ export async function POST(request: NextRequest) {
           { status: 401 }
         );
       }
+      console.error("Anthropic API error:", error.message);
       return NextResponse.json(
-        { error: `API呼び出しに失敗しました: ${error.message}` },
+        { error: "API呼び出しに失敗しました。しばらく後にお試しください。" },
         { status: error.status ?? 500 }
       );
     }
