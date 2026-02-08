@@ -11,7 +11,6 @@ import {
   Sparkles,
   MessageSquareOff,
   Star,
-  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,12 +26,10 @@ import {
   incrementChatCount,
   getChatUsage,
 } from "@/lib/chatLimit";
+import LineShareButton from "@/components/LineShareButton";
 
 // ---------- 定数 ----------
 const FREE_CHAT_LIMIT = 3;
-const LINE_URL =
-  "https://lin.ee/JlpMkfy?utm_source=career-ai&utm_medium=chat-limit";
-const LINE_URL_PLAIN = "https://lin.ee/JlpMkfy";
 
 // ---------- 型定義 ----------
 interface Message {
@@ -112,15 +109,10 @@ function LimitReachedCard({
             <p className="text-xs text-muted-foreground">
               プロの転職アドバイザーがLINEで無料サポートします
             </p>
-            <a href={LINE_URL} target="_blank" rel="noopener noreferrer">
-              <Button
-                className="w-full gap-2 text-white"
-                style={{ backgroundColor: "#06C755" }}
-              >
-                <ExternalLink className="w-4 h-4" />
-                LINEで無料相談する
-              </Button>
-            </a>
+            <LineShareButton
+              context="chat-limit"
+              label="LINEで無料相談する"
+            />
           </div>
 
           {/* 課金カード */}
@@ -528,19 +520,10 @@ export default function ChatPage() {
               公式LINEにご登録いただくと、リリース時にお知らせします。
             </DialogDescription>
           </DialogHeader>
-          <a
-            href={LINE_URL_PLAIN}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button
-              className="w-full gap-2 text-white"
-              style={{ backgroundColor: "#06C755" }}
-            >
-              <ExternalLink className="w-4 h-4" />
-              公式LINEに登録する
-            </Button>
-          </a>
+          <LineShareButton
+            context="chat"
+            label="公式LINEに登録する"
+          />
         </DialogContent>
       </Dialog>
     </main>
