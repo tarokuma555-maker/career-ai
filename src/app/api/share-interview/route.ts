@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@vercel/kv";
 import { nanoid } from "nanoid";
-import type { InterviewQuestion, RichInterviewResult } from "@/lib/types";
+import type { SharedQuestion } from "@/lib/types";
 
 // ---------- 定数 ----------
 const KV_PREFIX = "career-ai:interview:";
@@ -9,7 +9,7 @@ const TTL_SECONDS = 60 * 60 * 24 * 90; // 90日
 
 // ---------- レート制限（インメモリ / HMR耐性） ----------
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_MAX = 10;
 
 const globalForRateLimit = globalThis as unknown as {
   _shareInterviewRateLimitLog?: Map<string, number[]>;
@@ -35,12 +35,11 @@ function isRateLimited(ip: string): boolean {
 // ---------- 共有データ型 ----------
 interface ShareInterviewData {
   careerTitle: string;
-  questions: InterviewQuestion[];
-  reviewResult?: RichInterviewResult;
+  questions: SharedQuestion[];
   createdAt: number;
 }
 
-// ---------- POST: 共有リンク作成 ----------
+// ---------- POST: 新規作成 ----------
 export async function POST(request: NextRequest) {
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
@@ -56,8 +55,7 @@ export async function POST(request: NextRequest) {
 
   let body: {
     careerTitle?: string;
-    questions?: InterviewQuestion[];
-    reviewResult?: RichInterviewResult;
+    questions?: SharedQuestion[];
   };
   try {
     body = await request.json();
@@ -75,7 +73,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ペイロードサイズ制限（500KB - 添削結果含む場合があるため）
   const payloadSize = JSON.stringify(body).length;
   if (payloadSize > 500_000) {
     return NextResponse.json(
@@ -88,7 +85,6 @@ export async function POST(request: NextRequest) {
   const data: ShareInterviewData = {
     careerTitle: body.careerTitle,
     questions: body.questions,
-    reviewResult: body.reviewResult,
     createdAt: Date.now(),
   };
 
@@ -105,6 +101,79 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ shareId });
+}
+
+// ---------- PUT: 既存データ上書き更新 ----------
+export async function PUT(request: NextRequest) {
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    request.headers.get("x-real-ip") ??
+    "unknown";
+
+  if (isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: "リクエスト回数の上限に達しました。1分後に再度お試しください。" },
+      { status: 429 }
+    );
+  }
+
+  let body: {
+    shareId?: string;
+    careerTitle?: string;
+    questions?: SharedQuestion[];
+  };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "リクエストの形式が正しくありません。" },
+      { status: 400 }
+    );
+  }
+
+  if (!body.shareId || !body.careerTitle || !body.questions || body.questions.length === 0) {
+    return NextResponse.json(
+      { error: "共有するデータが不足しています。" },
+      { status: 400 }
+    );
+  }
+
+  const payloadSize = JSON.stringify(body).length;
+  if (payloadSize > 500_000) {
+    return NextResponse.json(
+      { error: "データサイズが大きすぎます。" },
+      { status: 413 }
+    );
+  }
+
+  // 既存データの存在確認
+  const existing = await kv.get<string>(`${KV_PREFIX}${body.shareId}`);
+  if (!existing) {
+    return NextResponse.json(
+      { error: "指定された共有IDが見つかりません。" },
+      { status: 404 }
+    );
+  }
+
+  const data: ShareInterviewData = {
+    careerTitle: body.careerTitle,
+    questions: body.questions,
+    createdAt: Date.now(),
+  };
+
+  try {
+    await kv.set(`${KV_PREFIX}${body.shareId}`, JSON.stringify(data), {
+      ex: TTL_SECONDS,
+    });
+  } catch (err) {
+    console.error("KV write error:", err);
+    return NextResponse.json(
+      { error: "共有データの更新に失敗しました。しばらく後にお試しください。" },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ shareId: body.shareId });
 }
 
 // ---------- GET: 共有データ取得 ----------
@@ -133,7 +202,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       careerTitle: data.careerTitle,
       questions: data.questions,
-      reviewResult: data.reviewResult,
     });
   } catch (err) {
     console.error("KV read error:", err);

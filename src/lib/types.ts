@@ -85,3 +85,10 @@ export interface RichInterviewResult {
     reviewData: ReviewData;
   }[];
 }
+
+// ---------- 共有用データ ----------
+export interface SharedQuestion {
+  question: string;
+  userAnswer: string | null;
+  review: ReviewData | null;
+}

@@ -16,9 +16,9 @@ import {
   Users,
   MessageCircle,
   Share2,
-  Copy,
   Check,
   Lock,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +34,8 @@ import type {
   InterviewQuestion,
   RichInterviewResult,
   CareerPath,
+  SharedQuestion,
+  ReviewData,
 } from "@/lib/types";
 import {
   canUseInterviewReview,
@@ -41,8 +43,8 @@ import {
   incrementInterviewReview,
 } from "@/lib/chatLimit";
 
-const LINE_URL_FREE =
-  "https://lin.ee/JlpMkfy?utm_source=career-ai&utm_medium=interview";
+const LINE_SHARE_URL =
+  "https://lin.ee/JlpMkfy?utm_source=career-ai&utm_medium=interview-share";
 
 function LineIcon({ className }: { className?: string }) {
   return (
@@ -75,10 +77,11 @@ export default function InterviewPage() {
   const [error, setError] = useState<string | null>(null);
 
   // 共有関連
-  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareId, setShareId] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const isSharingRef = useRef(false);
   const [copied, setCopied] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // 利用制限
   const [canReview, setCanReview] = useState(true);
@@ -96,11 +99,17 @@ export default function InterviewPage() {
     setReviewRemaining(getInterviewRemaining());
   }, [router]);
 
+  // トースト自動消去
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
   // 質問生成（phase が loading になったら実行）
   useEffect(() => {
     if (phase !== "loading" || !careerTitle) return;
 
-    // キャリアパスの詳細を取得
     let careerDetail = "";
     const analysisRaw = localStorage.getItem("analysisResult");
     if (analysisRaw) {
@@ -121,7 +130,6 @@ export default function InterviewPage() {
       }
     }
 
-    // ユーザープロフィール
     let userProfile = "";
     const diagRaw = localStorage.getItem("diagnosisData");
     if (diagRaw) {
@@ -172,27 +180,92 @@ export default function InterviewPage() {
     generateQuestions();
   }, [phase, careerTitle]);
 
-  // 共有リンク作成
-  const handleShareQuestions = useCallback(async () => {
-    if (isSharingRef.current || shareUrl) return;
+  // ---------- 共有データを構築 ----------
+  const buildSharedQuestions = useCallback((): SharedQuestion[] => {
+    // result がある場合は添削結果も含める
+    const reviewMap = new Map<string, ReviewData>();
+    if (result) {
+      for (const r of result.reviews) {
+        reviewMap.set(r.question, r.reviewData);
+      }
+    }
+
+    return questions.map((q) => ({
+      question: q.question,
+      userAnswer: answers[q.id]?.trim() || null,
+      review: reviewMap.get(q.question) ?? null,
+    }));
+  }, [questions, answers, result]);
+
+  // ---------- 統一共有ハンドラ ----------
+  const handleShareToAgent = useCallback(async () => {
+    if (isSharingRef.current) return;
     isSharingRef.current = true;
     setIsSharing(true);
 
     try {
-      const res = await fetch("/api/share-interview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ careerTitle, questions }),
-      });
+      const sharedQuestions = buildSharedQuestions();
+      let currentShareId = shareId;
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "共有リンクの作成に失敗しました。");
+      if (currentShareId) {
+        // PUT: 既存データ更新
+        const res = await fetch("/api/share-interview", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            shareId: currentShareId,
+            careerTitle,
+            questions: sharedQuestions,
+          }),
+        });
+        if (!res.ok) {
+          // 失敗時は新規作成にフォールバック
+          currentShareId = null;
+        }
       }
 
-      const data = await res.json();
-      const url = `${window.location.origin}/interview/share/${data.shareId}`;
-      setShareUrl(url);
+      if (!currentShareId) {
+        // POST: 新規作成
+        const res = await fetch("/api/share-interview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            careerTitle,
+            questions: sharedQuestions,
+          }),
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "共有リンクの作成に失敗しました。");
+        }
+
+        const data = await res.json();
+        currentShareId = data.shareId;
+        setShareId(currentShareId);
+      }
+
+      const interviewUrl = `${window.location.origin}/interview/share/${currentShareId}`;
+      const resultShareUrl = localStorage.getItem("career-ai-share-url") ?? "";
+
+      const message = [
+        "キャリアAIの面接対策結果を共有します。",
+        "",
+        `🎤 想定質問＆回答:`,
+        interviewUrl,
+        ...(resultShareUrl ? ["", `📊 診断結果:`, resultShareUrl] : []),
+      ].join("\n");
+
+      try {
+        await navigator.clipboard.writeText(message);
+        setCopied(true);
+        setToastMessage("面接対策の内容がコピーされました。LINEで貼り付けてください");
+        setTimeout(() => setCopied(false), 3000);
+      } catch {
+        // fallback
+      }
+
+      window.open(LINE_SHARE_URL, "_blank", "noopener,noreferrer");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "共有リンクの作成に失敗しました。"
@@ -201,61 +274,10 @@ export default function InterviewPage() {
       isSharingRef.current = false;
       setIsSharing(false);
     }
-  }, [careerTitle, questions, shareUrl]);
-
-  // URLコピー
-  const handleCopyUrl = useCallback(async () => {
-    if (!shareUrl) return;
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // fallback
-    }
-  }, [shareUrl]);
-
-  // LINEで質問を送る
-  const handleLineShare = useCallback(async () => {
-    // まず共有リンクがなければ作成
-    let url = shareUrl;
-    if (!url) {
-      try {
-        const res = await fetch("/api/share-interview", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ careerTitle, questions }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          url = `${window.location.origin}/interview/share/${data.shareId}`;
-          setShareUrl(url);
-        }
-      } catch {
-        // 共有リンクなしで続行
-      }
-    }
-
-    const message = [
-      `【面接対策 - ${careerTitle}】`,
-      "AIが生成した想定質問です。",
-      "",
-      ...(url ? [url, ""] : []),
-      "面接対策のアドバイスをお願いします。",
-    ].join("\n");
-
-    try {
-      await navigator.clipboard.writeText(message);
-    } catch {
-      // fallback
-    }
-
-    window.open(LINE_URL_FREE, "_blank", "noopener,noreferrer");
-  }, [shareUrl, careerTitle, questions]);
+  }, [buildSharedQuestions, shareId, careerTitle]);
 
   // 回答添削
   const handleSubmitReview = useCallback(async () => {
-    // 利用回数チェック
     const { allowed, remaining } = incrementInterviewReview();
     setReviewRemaining(remaining);
     setCanReview(remaining > 0);
@@ -305,68 +327,70 @@ export default function InterviewPage() {
     questions.length > 0 &&
     questions.every((q) => (answers[q.id] ?? "").trim().length > 0);
 
-  // 添削結果をエージェントに共有
-  const handleShareReview = useCallback(async () => {
-    if (isSharingRef.current) return;
-    isSharingRef.current = true;
-    setIsSharing(true);
+  const hasAnyAnswer =
+    questions.length > 0 &&
+    questions.some((q) => (answers[q.id] ?? "").trim().length > 0);
 
-    try {
-      const res = await fetch("/api/share-interview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          careerTitle,
-          questions,
-          reviewResult: result,
-        }),
-      });
+  // ---------- トースト ----------
+  const toast = toastMessage && (
+    <motion.div
+      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-foreground text-background px-4 py-2.5 rounded-lg shadow-lg text-sm max-w-[90vw]"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+    >
+      {toastMessage}
+    </motion.div>
+  );
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "共有リンクの作成に失敗しました。");
-      }
-
-      const data = await res.json();
-      const interviewShareUrl = `${window.location.origin}/interview/share/${data.shareId}`;
-
-      const resultShareRaw = localStorage.getItem("lastResultShareUrl");
-      const message = [
-        "キャリアAIの面接対策結果を共有します。",
-        "",
-        `🎤 想定質問＆添削結果: ${interviewShareUrl}`,
-        ...(resultShareRaw ? [`📊 診断結果: ${resultShareRaw}`] : []),
-      ].join("\n");
-
-      try {
-        await navigator.clipboard.writeText(message);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 3000);
-      } catch {
-        // fallback
-      }
-
-      window.open(
-        "https://lin.ee/JlpMkfy?utm_source=career-ai&utm_medium=interview-review-share",
-        "_blank",
-        "noopener,noreferrer"
+  // ---------- 共有ボタンコンポーネント（再利用） ----------
+  function ShareButton({ label, compact }: { label?: string; compact?: boolean }) {
+    if (compact) {
+      return (
+        <button
+          className="flex items-center gap-1.5 text-sm text-[#06C755] hover:underline disabled:opacity-50"
+          onClick={handleShareToAgent}
+          disabled={isSharing}
+        >
+          {isSharing ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : copied ? (
+            <Check className="w-3.5 h-3.5" />
+          ) : (
+            <Share2 className="w-3.5 h-3.5" />
+          )}
+          {copied ? "コピーされました" : (label ?? "ここまでの内容をエージェントに共有する")}
+        </button>
       );
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "共有リンクの作成に失敗しました。"
-      );
-    } finally {
-      isSharingRef.current = false;
-      setIsSharing(false);
     }
-  }, [careerTitle, questions, result]);
+
+    return (
+      <Button
+        size="lg"
+        className="w-full gap-2 text-white"
+        style={{ backgroundColor: "#06C755" }}
+        onClick={handleShareToAgent}
+        disabled={isSharing}
+      >
+        {isSharing ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : copied ? (
+          <Check className="w-4 h-4" />
+        ) : (
+          <LineIcon className="w-4 h-4" />
+        )}
+        {copied
+          ? "コピーされました — LINEに貼り付けてください"
+          : (label ?? "エージェントに共有する")}
+      </Button>
+    );
+  }
 
   // ---------- 依頼先の選択 ----------
   if (phase === "selecting" && careerTitle) {
     return (
       <main className="min-h-screen py-10 px-4">
         <div className="max-w-3xl mx-auto space-y-6">
-          {/* ヘッダー */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -385,16 +409,15 @@ export default function InterviewPage() {
             )}
           </motion.div>
 
-          {/* 選択カード */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* LINE（無料） */}
+            {/* LINE */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.4 }}
             >
               <a
-                href={LINE_URL_FREE}
+                href={LINE_SHARE_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block h-full"
@@ -429,7 +452,7 @@ export default function InterviewPage() {
               </a>
             </motion.div>
 
-            {/* AI面接対策（月1回無料） */}
+            {/* AI */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
@@ -481,10 +504,7 @@ export default function InterviewPage() {
             <Card className="bg-[#06C755]/5 border-[#06C755]/20">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <MessageCircle
-                    className="w-5 h-5"
-                    style={{ color: "#06C755" }}
-                  />
+                  <MessageCircle className="w-5 h-5" style={{ color: "#06C755" }} />
                   LINE転職エージェントでできること
                 </CardTitle>
               </CardHeader>
@@ -492,44 +512,29 @@ export default function InterviewPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 rounded-full bg-[#06C755]/10 flex items-center justify-center flex-shrink-0">
-                      <Clock
-                        className="w-4 h-4"
-                        style={{ color: "#06C755" }}
-                      />
+                      <Clock className="w-4 h-4" style={{ color: "#06C755" }} />
                     </div>
                     <div>
                       <p className="text-sm font-medium">最短即日対応</p>
-                      <p className="text-xs text-muted-foreground">
-                        LINEで気軽にいつでも相談OK
-                      </p>
+                      <p className="text-xs text-muted-foreground">LINEで気軽にいつでも相談OK</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 rounded-full bg-[#06C755]/10 flex items-center justify-center flex-shrink-0">
-                      <Users
-                        className="w-4 h-4"
-                        style={{ color: "#06C755" }}
-                      />
+                      <Users className="w-4 h-4" style={{ color: "#06C755" }} />
                     </div>
                     <div>
                       <p className="text-sm font-medium">模擬面接</p>
-                      <p className="text-xs text-muted-foreground">
-                        プロによる実践的な面接練習
-                      </p>
+                      <p className="text-xs text-muted-foreground">プロによる実践的な面接練習</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 rounded-full bg-[#06C755]/10 flex items-center justify-center flex-shrink-0">
-                      <CheckCircle2
-                        className="w-4 h-4"
-                        style={{ color: "#06C755" }}
-                      />
+                      <CheckCircle2 className="w-4 h-4" style={{ color: "#06C755" }} />
                     </div>
                     <div>
                       <p className="text-sm font-medium">回答添削</p>
-                      <p className="text-xs text-muted-foreground">
-                        志望動機・自己PRの添削対応
-                      </p>
+                      <p className="text-xs text-muted-foreground">志望動機・自己PRの添削対応</p>
                     </div>
                   </div>
                 </div>
@@ -537,6 +542,7 @@ export default function InterviewPage() {
             </Card>
           </motion.div>
         </div>
+        {toast}
       </main>
     );
   }
@@ -556,6 +562,7 @@ export default function InterviewPage() {
             </Link>
           </CardContent>
         </Card>
+        {toast}
       </main>
     );
   }
@@ -574,16 +581,12 @@ export default function InterviewPage() {
           <div className="relative mx-auto w-16 h-16">
             <Brain className="w-16 h-16 text-primary" aria-hidden="true" />
             <div className="absolute inset-0 flex items-center justify-center">
-              <Loader2
-                className="w-8 h-8 text-primary animate-spin opacity-50"
-                aria-hidden="true"
-              />
+              <Loader2 className="w-8 h-8 text-primary animate-spin opacity-50" aria-hidden="true" />
             </div>
           </div>
-          <p className="text-muted-foreground">
-            面接の想定質問を生成しています...
-          </p>
+          <p className="text-muted-foreground">面接の想定質問を生成しています...</p>
         </motion.div>
+        {toast}
       </main>
     );
   }
@@ -593,11 +596,7 @@ export default function InterviewPage() {
     return (
       <main className="min-h-screen py-10 px-4">
         <div className="max-w-3xl mx-auto space-y-6">
-          {/* ヘッダー */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <Link href="/result">
               <Button variant="ghost" size="sm" className="gap-1 mb-4">
                 <ArrowLeft className="w-4 h-4" />
@@ -610,7 +609,7 @@ export default function InterviewPage() {
             </p>
           </motion.div>
 
-          {/* 質問一覧（閲覧用） */}
+          {/* 質問一覧 */}
           {questions.map((q, i) => (
             <motion.div
               key={q.id}
@@ -621,12 +620,7 @@ export default function InterviewPage() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-start gap-3">
-                    <Badge
-                      variant="outline"
-                      className="flex-shrink-0 mt-0.5"
-                    >
-                      Q{q.id}
-                    </Badge>
+                    <Badge variant="outline" className="flex-shrink-0 mt-0.5">Q{q.id}</Badge>
                     <span>{q.question}</span>
                   </CardTitle>
                 </CardHeader>
@@ -635,11 +629,7 @@ export default function InterviewPage() {
           ))}
 
           {/* 質問を共有 */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -651,64 +641,13 @@ export default function InterviewPage() {
                 <p className="text-sm text-muted-foreground">
                   転職エージェントにこの質問を共有して、面接対策のアドバイスをもらいましょう。
                 </p>
-
-                {!shareUrl ? (
-                  <Button
-                    variant="outline"
-                    className="w-full gap-2"
-                    onClick={handleShareQuestions}
-                    disabled={isSharing}
-                  >
-                    {isSharing ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Share2 className="w-4 h-4" />
-                    )}
-                    共有リンクを作成
-                  </Button>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={shareUrl}
-                        className="flex-1 min-w-0 rounded-md border bg-muted px-3 py-2 text-sm"
-                      />
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={handleCopyUrl}
-                      >
-                        {copied ? (
-                          <Check className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                <Button
-                  className="w-full gap-2 text-white"
-                  style={{ backgroundColor: "#06C755" }}
-                  onClick={handleLineShare}
-                >
-                  <LineIcon className="w-4 h-4" />
-                  LINEで質問を送る
-                  <ExternalLink className="w-3.5 h-3.5 ml-auto" />
-                </Button>
+                <ShareButton label="LINEで質問をエージェントに送る" />
               </CardContent>
             </Card>
           </motion.div>
 
           {/* AI添削セクション */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-          >
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
             {canReview ? (
               <Card className="border-blue-200">
                 <CardHeader className="pb-3">
@@ -727,52 +666,69 @@ export default function InterviewPage() {
                   >
                     <Send className="w-4 h-4" />
                     回答を入力してAIに添削を依頼する
-                    <Badge
-                      variant="secondary"
-                      className="ml-auto text-xs bg-blue-400/20 text-white"
-                    >
+                    <Badge variant="secondary" className="ml-auto text-xs bg-blue-400/20 text-white">
                       無料 残り{reviewRemaining}回/月
                     </Badge>
                   </Button>
                 </CardContent>
               </Card>
             ) : (
+              /* 制限画面 */
               <Card className="border-orange-200 bg-orange-50/50 dark:bg-orange-950/10">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Lock className="w-5 h-5 text-orange-500" />
-                    今月のAI添削無料枠を使い切りました
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    AI添削は月1回無料でご利用いただけます。来月また1回無料で利用できます。
-                  </p>
-                  <a
-                    href={LINE_URL_FREE}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button
-                      className="w-full gap-2 text-white"
-                      style={{ backgroundColor: "#06C755" }}
-                    >
-                      <LineIcon className="w-4 h-4" />
-                      LINEでプロに添削を依頼する
-                      <ExternalLink className="w-3.5 h-3.5 ml-auto" />
-                    </Button>
-                  </a>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
-                    <Star className="w-3.5 h-3.5" />
-                    <span>
-                      プレミアムプラン（無制限）は準備中です
-                    </span>
+                <CardContent className="pt-6 space-y-4">
+                  <div className="text-center space-y-2">
+                    <Lock className="w-8 h-8 text-orange-500 mx-auto" />
+                    <h3 className="font-bold">AI添削の無料回数を使い切りました</h3>
                   </div>
+
+                  {hasAnyAnswer && (
+                    <div className="flex items-start gap-2 text-sm text-muted-foreground bg-white dark:bg-muted/30 rounded-lg p-3">
+                      <Info className="w-4 h-4 flex-shrink-0 mt-0.5 text-blue-500" />
+                      <span>回答はそのまま残っています。エージェントに共有して、プロの添削を受けることもできます。</span>
+                    </div>
+                  )}
+
+                  {/* LINE共有カード */}
+                  <Card className="border-[#06C755]/30">
+                    <CardContent className="pt-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <MessageCircle className="w-4 h-4 text-[#06C755]" />
+                        <p className="text-sm font-medium">質問と回答をエージェントに共有</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        あなたの回答をプロのアドバイザーがLINEで添削＆面接対策します
+                      </p>
+                      <ShareButton label="LINEで無料相談する" />
+                    </CardContent>
+                  </Card>
+
+                  {/* プレミアムカード */}
+                  <Card className="border-blue-200">
+                    <CardContent className="pt-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Star className="w-4 h-4 text-blue-500" />
+                        <p className="text-sm font-medium">プレミアムで無制限にAI添削</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        月額¥980で全質問をAIが添削
+                      </p>
+                      <Button className="w-full gap-2 bg-blue-500 hover:bg-blue-600 text-white" disabled>
+                        <Star className="w-4 h-4" />
+                        プレミアムに加入する（準備中）
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <p className="text-xs text-center text-muted-foreground flex items-center justify-center gap-1">
+                    <Info className="w-3 h-3" />
+                    無料回数は毎月1日にリセットされます
+                  </p>
                 </CardContent>
               </Card>
             )}
           </motion.div>
         </div>
+        {toast}
       </main>
     );
   }
@@ -782,11 +738,7 @@ export default function InterviewPage() {
     return (
       <main className="min-h-screen py-10 px-4">
         <div className="max-w-3xl mx-auto space-y-6">
-          {/* ヘッダー */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <Button
               variant="ghost"
               size="sm"
@@ -802,7 +754,6 @@ export default function InterviewPage() {
             </p>
           </motion.div>
 
-          {/* 質問カード */}
           {questions.map((q, i) => (
             <motion.div
               key={q.id}
@@ -813,12 +764,7 @@ export default function InterviewPage() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-start gap-3">
-                    <Badge
-                      variant="outline"
-                      className="flex-shrink-0 mt-0.5"
-                    >
-                      Q{q.id}
-                    </Badge>
+                    <Badge variant="outline" className="flex-shrink-0 mt-0.5">Q{q.id}</Badge>
                     <span>{q.question}</span>
                   </CardTitle>
                 </CardHeader>
@@ -830,10 +776,7 @@ export default function InterviewPage() {
                     rows={4}
                     value={answers[q.id] ?? ""}
                     onChange={(e) =>
-                      setAnswers((prev) => ({
-                        ...prev,
-                        [q.id]: e.target.value,
-                      }))
+                      setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))
                     }
                   />
                 </CardContent>
@@ -841,24 +784,32 @@ export default function InterviewPage() {
             </motion.div>
           ))}
 
-          {/* 送信ボタン */}
+          {/* 送信 + 共有リンク */}
           <motion.div
-            className="flex justify-center pt-4 pb-8"
+            className="space-y-4 pt-4 pb-8"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
           >
-            <Button
-              size="lg"
-              className="gap-2"
-              disabled={!allAnswered}
-              onClick={handleSubmitReview}
-            >
-              <Send className="w-4 h-4" />
-              添削を依頼する
-            </Button>
+            <div className="flex justify-center">
+              <Button
+                size="lg"
+                className="gap-2"
+                disabled={!allAnswered}
+                onClick={handleSubmitReview}
+              >
+                <Send className="w-4 h-4" />
+                添削を依頼する
+              </Button>
+            </div>
+            {hasAnyAnswer && (
+              <div className="flex justify-center">
+                <ShareButton compact label="ここまでの内容をエージェントに共有する" />
+              </div>
+            )}
           </motion.div>
         </div>
+        {toast}
       </main>
     );
   }
@@ -873,10 +824,9 @@ export default function InterviewPage() {
           animate={{ opacity: 1, y: 0 }}
         >
           <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto" />
-          <p className="text-muted-foreground">
-            AIが回答を添削しています...
-          </p>
+          <p className="text-muted-foreground">AIが回答を添削しています...</p>
         </motion.div>
+        {toast}
       </main>
     );
   }
@@ -888,11 +838,7 @@ export default function InterviewPage() {
     return (
       <main className="min-h-screen py-10 px-4">
         <div className="max-w-3xl mx-auto space-y-8">
-          {/* ヘッダー */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-          >
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <Button
               variant="ghost"
               size="sm"
@@ -903,12 +849,10 @@ export default function InterviewPage() {
               質問一覧に戻る
             </Button>
             <h1 className="text-2xl font-bold">添削結果</h1>
-            <p className="text-muted-foreground mt-1">
-              「{careerTitle}」の面接対策
-            </p>
+            <p className="text-muted-foreground mt-1">「{careerTitle}」の面接対策</p>
           </motion.div>
 
-          {/* 各問の添削結果（リッチUI） */}
+          {/* リッチUI */}
           {result.reviews.map((review, i) => (
             <InterviewReviewCard
               key={i}
@@ -921,36 +865,16 @@ export default function InterviewPage() {
 
           {/* 無料枠使い切り警告 */}
           {noRemaining && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.8 }}
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
               <Card className="border-orange-200 bg-orange-50/50 dark:bg-orange-950/10">
                 <CardContent className="pt-6 space-y-3">
                   <div className="flex items-center gap-2">
                     <Lock className="w-5 h-5 text-orange-500" />
-                    <p className="text-sm font-medium">
-                      今月のAI添削無料枠を使い切りました
-                    </p>
+                    <p className="text-sm font-medium">今月のAI添削無料枠を使い切りました</p>
                   </div>
                   <p className="text-sm text-muted-foreground">
                     来月また1回無料で利用できます。さらに添削を受けたい場合はLINEでプロに相談しましょう。
                   </p>
-                  <a
-                    href={LINE_URL_FREE}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button
-                      className="w-full gap-2 text-white"
-                      style={{ backgroundColor: "#06C755" }}
-                    >
-                      <LineIcon className="w-4 h-4" />
-                      LINEでプロに添削を依頼する
-                      <ExternalLink className="w-3.5 h-3.5 ml-auto" />
-                    </Button>
-                  </a>
                 </CardContent>
               </Card>
             </motion.div>
@@ -963,24 +887,7 @@ export default function InterviewPage() {
             animate={{ opacity: 1 }}
             transition={{ delay: 0.9 }}
           >
-            <Button
-              size="lg"
-              className="w-full gap-2 text-white"
-              style={{ backgroundColor: "#06C755" }}
-              onClick={handleShareReview}
-              disabled={isSharing}
-            >
-              {isSharing ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : copied ? (
-                <Check className="w-4 h-4" />
-              ) : (
-                <LineIcon className="w-4 h-4" />
-              )}
-              {copied
-                ? "URLがコピーされました"
-                : "添削結果をエージェントに共有する"}
-            </Button>
+            <ShareButton label="添削結果をエージェントに共有する" />
             <div className="flex flex-col sm:flex-row gap-3">
               <Button
                 size="lg"
@@ -992,11 +899,7 @@ export default function InterviewPage() {
                 質問一覧に戻る
               </Button>
               <Link href="/result" className="flex-1">
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="w-full gap-2"
-                >
+                <Button size="lg" variant="outline" className="w-full gap-2">
                   結果ページに戻る
                 </Button>
               </Link>
@@ -1006,6 +909,7 @@ export default function InterviewPage() {
             </p>
           </motion.div>
         </div>
+        {toast}
       </main>
     );
   }
