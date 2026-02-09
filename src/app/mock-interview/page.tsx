@@ -1,10 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, ArrowLeft, Loader2, FileText, Brain, AlertTriangle, Info, Keyboard } from "lucide-react";
+import { Mic, ArrowLeft, Loader2, FileText, Brain, AlertTriangle, Info, Keyboard, Video, VideoOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +37,6 @@ const INTERVIEW_TYPES: { value: InterviewType; label: string; desc: string }[] =
 ];
 
 export default function MockInterviewPage() {
-  const router = useRouter();
   const [industry, setIndustry] = useState("");
   const [customIndustry, setCustomIndustry] = useState("");
   const [position, setPosition] = useState("");
@@ -51,6 +49,7 @@ export default function MockInterviewPage() {
   const [hasResumeData, setHasResumeData] = useState(false);
   const [hasDiagnosisData, setHasDiagnosisData] = useState(false);
   const [showMicModal, setShowMicModal] = useState(false);
+  const [useCamera, setUseCamera] = useState(true);
 
   useEffect(() => {
     setCanUse(canUseMockInterview());
@@ -77,8 +76,15 @@ export default function MockInterviewPage() {
   }, []);
 
   // Start interview (called after mic check)
-  const startInterview = useCallback(async () => {
+  const startInterview = useCallback(async (hasMic: boolean) => {
     setIsStarting(true);
+
+    // Activate TTS in user gesture context (critical for iOS)
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      const dummy = new SpeechSynthesisUtterance("");
+      dummy.volume = 0;
+      window.speechSynthesis.speak(dummy);
+    }
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -125,22 +131,22 @@ export default function MockInterviewPage() {
 
       const data = await res.json();
 
-      localStorage.setItem("career-ai-mock-session", JSON.stringify(data));
+      // Save session with mic/camera preferences
+      localStorage.setItem("career-ai-mock-session", JSON.stringify({
+        ...data,
+        hasMic,
+        inputMode: hasMic ? "voice" : "text",
+        useCamera,
+      }));
 
-      const url = `/mock-interview/session?sessionId=${data.sessionId}`;
-      router.push(url);
-      // iOS fallback: force navigate if router.push doesn't work
-      setTimeout(() => {
-        if (!window.location.pathname.includes("/session")) {
-          window.location.href = url;
-        }
-      }, 2000);
+      // Use window.location.href for reliable iOS navigation
+      window.location.href = `/mock-interview/session?sessionId=${data.sessionId}`;
     } catch (err) {
       alert(err instanceof Error ? err.message : "面接の開始に失敗しました");
     } finally {
       setIsStarting(false);
     }
-  }, [selectedIndustry, selectedPosition, interviewType, questionCount, router]);
+  }, [selectedIndustry, selectedPosition, interviewType, questionCount, useCamera]);
 
   // Handle start button click - check mic first
   const handleStart = async () => {
@@ -151,7 +157,7 @@ export default function MockInterviewPage() {
       setShowMicModal(true);
       return;
     }
-    await startInterview();
+    await startInterview(true);
   };
 
   // 利用制限に達している場合
@@ -319,6 +325,54 @@ export default function MockInterviewPage() {
                 </div>
               </div>
 
+              {/* Interview Format (Camera) */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">面接形式</label>
+                <div className="space-y-2">
+                  <label
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      useCamera ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="cameraMode"
+                      checked={useCamera}
+                      onChange={() => setUseCamera(true)}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium flex items-center gap-1.5">
+                        <Video className="w-3.5 h-3.5" />
+                        オンライン面接形式（カメラON）
+                      </p>
+                      <p className="text-xs text-muted-foreground">本番に近い緊張感で練習できます</p>
+                    </div>
+                    <Badge variant="secondary" className="text-[10px] flex-shrink-0">おすすめ</Badge>
+                  </label>
+                  <label
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      !useCamera ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="cameraMode"
+                      checked={!useCamera}
+                      onChange={() => setUseCamera(false)}
+                      className="mt-0.5"
+                    />
+                    <div>
+                      <p className="text-sm font-medium flex items-center gap-1.5">
+                        <VideoOff className="w-3.5 h-3.5" />
+                        音声のみ（カメラOFF）
+                      </p>
+                      <p className="text-xs text-muted-foreground">カメラなしで音声のみの面接練習</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
               {/* Start Button */}
               <Button
                 className="w-full gap-2"
@@ -389,12 +443,7 @@ export default function MockInterviewPage() {
                     onClick={async () => {
                       setShowMicModal(false);
                       const ok = await checkMicPermission();
-                      if (ok) {
-                        await startInterview();
-                      } else {
-                        // Start in text mode anyway
-                        await startInterview();
-                      }
+                      await startInterview(ok);
                     }}
                     disabled={isStarting}
                   >
@@ -406,7 +455,7 @@ export default function MockInterviewPage() {
                     className="w-full gap-2 min-h-[48px] touch-manipulation"
                     onClick={async () => {
                       setShowMicModal(false);
-                      await startInterview();
+                      await startInterview(false);
                     }}
                     disabled={isStarting}
                   >
