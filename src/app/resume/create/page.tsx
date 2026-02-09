@@ -441,7 +441,7 @@ function ResumeCreatePage() {
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="text-sm font-medium mb-1.5 block">姓 <span className="text-destructive">*</span></label>
-                          <Input placeholder="大熊" value={formData.basicInfo.lastName} onChange={e => updateBasicInfo("lastName", e.target.value)} />
+                          <Input placeholder="転職" value={formData.basicInfo.lastName} onChange={e => updateBasicInfo("lastName", e.target.value)} />
                           <FieldError name="lastName" />
                         </div>
                         <div>
@@ -453,7 +453,7 @@ function ResumeCreatePage() {
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="text-sm font-medium mb-1.5 block">ふりがな（姓） <span className="text-destructive">*</span></label>
-                          <Input placeholder="おおくま" value={formData.basicInfo.lastNameKana} onChange={e => updateBasicInfo("lastNameKana", e.target.value)} />
+                          <Input placeholder="てんしょく" value={formData.basicInfo.lastNameKana} onChange={e => updateBasicInfo("lastNameKana", e.target.value)} />
                           <FieldError name="lastNameKana" />
                         </div>
                         <div>
