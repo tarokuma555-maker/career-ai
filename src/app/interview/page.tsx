@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain,
   ArrowLeft,
@@ -15,6 +15,8 @@ import {
   MessageCircle,
   Lock,
   Info,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +49,6 @@ type Phase =
   | "selecting"
   | "loading"
   | "questions"
-  | "answering"
   | "reviewing"
   | "result";
 
@@ -59,6 +60,7 @@ export default function InterviewPage() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [result, setResult] = useState<RichInterviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expandedQuestionId, setExpandedQuestionId] = useState<number | null>(null);
 
   // 共有関連
   const [shareId, setShareId] = useState<string | null>(null);
@@ -259,7 +261,7 @@ export default function InterviewPage() {
       setError(
         err instanceof Error ? err.message : "添削に失敗しました。"
       );
-      setPhase("answering");
+      setPhase("questions");
     }
   }, [questions, answers, careerTitle]);
 
@@ -440,21 +442,52 @@ export default function InterviewPage() {
     );
   }
 
-  // ---------- ローディング ----------
+  // ---------- ローディング（スケルトン） ----------
   if (phase === "loading") {
     return (
       <PageTransition>
-      <main className="relative z-10 min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-4" role="status" aria-label="質問を生成中">
-          <AIThinking text="面接の想定質問を生成しています..." />
+      <main className="relative z-10 min-h-screen py-10 px-4">
+        <div className="max-w-3xl mx-auto space-y-6">
+          <div className="space-y-2 animate-pulse">
+            <div className="h-4 w-24 bg-muted rounded" />
+            <div className="h-8 w-48 bg-muted rounded" />
+            <div className="h-4 w-64 bg-muted rounded" />
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <div className="h-4 w-12 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+            </div>
+            <div className="h-2.5 bg-muted rounded-full" />
+          </div>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Card key={i} className="animate-pulse">
+              <CardHeader className="pb-3">
+                <div className="flex items-start gap-3">
+                  <div className="h-6 w-8 bg-muted rounded" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-full bg-muted rounded" />
+                    <div className="h-4 w-3/4 bg-muted rounded" />
+                  </div>
+                </div>
+              </CardHeader>
+            </Card>
+          ))}
+          <p className="text-sm text-center text-muted-foreground">
+            面接の想定質問を生成しています...
+          </p>
         </div>
       </main>
       </PageTransition>
     );
   }
 
-  // ---------- 質問表示 + 共有 + AI添削導線 ----------
+  // ---------- 質問表示（アコーディオン）+ 進捗 + 共有 + AI添削 ----------
   if (phase === "questions") {
+    const answeredCount = questions.filter(
+      (q) => (answers[q.id] ?? "").trim().length > 0
+    ).length;
+
     return (
       <PageTransition>
       <main className="relative z-10 min-h-screen py-10 px-4">
@@ -472,24 +505,111 @@ export default function InterviewPage() {
             </p>
           </motion.div>
 
-          {/* 質問一覧 */}
-          {questions.map((q, i) => (
-            <motion.div
-              key={q.id}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08, duration: 0.3 }}
-            >
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-start gap-3">
-                    <Badge variant="outline" className="flex-shrink-0 mt-0.5">Q{q.id}</Badge>
-                    <span>{q.question}</span>
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-            </motion.div>
-          ))}
+          {/* 進捗バー */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">進捗</span>
+                <span className="font-medium">
+                  {answeredCount}/{questions.length} 回答済み
+                </span>
+              </div>
+              <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-accent-gradient"
+                  initial={{ width: 0 }}
+                  animate={{
+                    width: `${questions.length > 0 ? (answeredCount / questions.length) * 100 : 0}%`,
+                  }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                />
+              </div>
+            </div>
+          </motion.div>
+
+          {/* アコーディオン質問カード */}
+          {questions.map((q, i) => {
+            const isExpanded = expandedQuestionId === q.id;
+            const hasAnswer = (answers[q.id] ?? "").trim().length > 0;
+            const isReviewed = result?.reviews.some(
+              (r) => r.question === q.question
+            );
+
+            return (
+              <motion.div
+                key={q.id}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08, duration: 0.3 }}
+              >
+                <Card className={isExpanded ? "ring-2 ring-primary/20" : ""}>
+                  <CardHeader
+                    className="pb-3 cursor-pointer select-none"
+                    onClick={() =>
+                      setExpandedQuestionId(isExpanded ? null : q.id)
+                    }
+                  >
+                    <CardTitle className="text-base flex items-start gap-3">
+                      <Badge
+                        variant={hasAnswer ? "default" : "outline"}
+                        className={`flex-shrink-0 mt-0.5 ${
+                          isReviewed
+                            ? "bg-green-500 text-white border-green-500"
+                            : hasAnswer
+                              ? "bg-primary text-white"
+                              : ""
+                        }`}
+                      >
+                        {isReviewed ? (
+                          <CheckCircle2 className="w-3 h-3" />
+                        ) : (
+                          `Q${q.id}`
+                        )}
+                      </Badge>
+                      <span className="flex-1">{q.question}</span>
+                      {isExpanded ? (
+                        <ChevronUp className="w-4 h-4 flex-shrink-0 mt-1 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 flex-shrink-0 mt-1 text-muted-foreground" />
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: "easeInOut" }}
+                        className="overflow-hidden"
+                      >
+                        <CardContent className="pt-0">
+                          <Textarea
+                            placeholder="あなたの回答を入力してください..."
+                            aria-label={`質問${q.id}への回答`}
+                            maxLength={2000}
+                            rows={4}
+                            value={answers[q.id] ?? ""}
+                            onChange={(e) =>
+                              setAnswers((prev) => ({
+                                ...prev,
+                                [q.id]: e.target.value,
+                              }))
+                            }
+                          />
+                        </CardContent>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </Card>
+              </motion.div>
+            );
+          })}
 
           {/* 質問を共有 */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
@@ -516,7 +636,7 @@ export default function InterviewPage() {
           {/* AI添削セクション */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
             {canReview ? (
-              <Card className="border-blue-200">
+              <Card className="border-blue-200 overflow-hidden">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Brain className="w-5 h-5 text-blue-500" />
@@ -527,16 +647,29 @@ export default function InterviewPage() {
                   <p className="text-sm text-muted-foreground">
                     各質問に対する回答を入力すると、AIが添削して改善案を提示します。
                   </p>
-                  <Button
-                    className="w-full gap-2"
-                    onClick={() => setPhase("answering")}
-                  >
-                    <Send className="w-4 h-4" />
-                    回答を入力してAIに添削を依頼する
-                    <Badge variant="secondary" className="ml-auto text-xs bg-blue-400/20 text-white">
+                  <div className="flex flex-col items-center gap-2">
+                    <Button
+                      className="w-full gap-2"
+                      disabled={!allAnswered}
+                      onClick={handleSubmitReview}
+                    >
+                      <Send className="w-4 h-4" />
+                      添削を依頼する
+                    </Button>
+                    <Badge variant="secondary" className="text-xs">
                       無料 残り{reviewRemaining}回/月
                     </Badge>
-                  </Button>
+                  </div>
+                  {hasAnyAnswer && (
+                    <div className="flex justify-center pt-1">
+                      <LineShareButton
+                        context="interview"
+                        onShare={createOrUpdateInterviewShare}
+                        compact
+                        label="ここまでの内容をエージェントに共有する"
+                      />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ) : (
@@ -596,93 +729,6 @@ export default function InterviewPage() {
                   </p>
                 </CardContent>
               </Card>
-            )}
-          </motion.div>
-        </div>
-      </main>
-      </PageTransition>
-    );
-  }
-
-  // ---------- 回答入力フェーズ ----------
-  if (phase === "answering") {
-    return (
-      <PageTransition>
-      <main className="relative z-10 min-h-screen py-10 px-4">
-        <div className="max-w-3xl mx-auto space-y-6">
-          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1 mb-4"
-              onClick={() => setPhase("questions")}
-            >
-              <ArrowLeft className="w-4 h-4" />
-              質問一覧に戻る
-            </Button>
-            <h1 className="text-2xl font-bold font-heading">面接対策</h1>
-            <p className="text-muted-foreground mt-1">
-              「{careerTitle}」の想定質問に回答してください
-            </p>
-          </motion.div>
-
-          {questions.map((q, i) => (
-            <motion.div
-              key={q.id}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1, duration: 0.3 }}
-            >
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-start gap-3">
-                    <Badge variant="outline" className="flex-shrink-0 mt-0.5">Q{q.id}</Badge>
-                    <span>{q.question}</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Textarea
-                    placeholder="あなたの回答を入力してください..."
-                    aria-label={`質問${q.id}への回答`}
-                    maxLength={2000}
-                    rows={4}
-                    value={answers[q.id] ?? ""}
-                    onChange={(e) =>
-                      setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))
-                    }
-                  />
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-
-          {/* 送信 + 共有リンク */}
-          <motion.div
-            className="space-y-4 pt-4 pb-8"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-          >
-            <div className="flex justify-center">
-              <Button
-                size="lg"
-                className="gap-2"
-                disabled={!allAnswered}
-                onClick={handleSubmitReview}
-              >
-                <Send className="w-4 h-4" />
-                添削を依頼する
-              </Button>
-            </div>
-            {hasAnyAnswer && (
-              <div className="flex justify-center">
-                <LineShareButton
-                  context="interview"
-                  onShare={createOrUpdateInterviewShare}
-                  compact
-                  label="ここまでの内容をエージェントに共有する"
-                />
-              </div>
             )}
           </motion.div>
         </div>

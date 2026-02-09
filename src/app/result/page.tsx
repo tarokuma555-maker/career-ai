@@ -492,9 +492,46 @@ export default function ResultPage() {
 
   if (!result) {
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <div role="status" aria-label="読み込み中" className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      <PageTransition>
+      <main className="relative z-10 min-h-screen py-10 px-4">
+        <div className="max-w-4xl mx-auto space-y-8">
+          <div className="text-center space-y-3 animate-pulse">
+            <div className="h-9 w-72 bg-muted rounded mx-auto" />
+            <div className="flex justify-center gap-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-6 w-16 bg-muted rounded-full" />
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 animate-pulse">
+            <div className="h-5 w-5 bg-muted rounded" />
+            <div className="h-6 w-48 bg-muted rounded" />
+          </div>
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="animate-pulse">
+              <CardHeader className="pb-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-24 h-24 rounded-full bg-muted flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-6 w-40 bg-muted rounded" />
+                    <div className="h-4 w-full bg-muted rounded" />
+                    <div className="h-4 w-3/4 bg-muted rounded" />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="h-3 w-full bg-muted rounded-full" />
+                <div className="flex flex-wrap gap-1.5">
+                  {[1, 2, 3, 4].map((j) => (
+                    <div key={j} className="h-6 w-16 bg-muted rounded-full" />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </main>
+      </PageTransition>
     );
   }
 
@@ -742,16 +779,16 @@ export default function ResultPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <input
                 readOnly
                 value={shareUrl ?? ""}
-                className="flex-1 min-w-0 rounded-md border bg-muted px-3 py-2 text-sm truncate"
+                className="w-full sm:flex-1 min-w-0 rounded-md border bg-muted px-3 py-2 text-sm truncate"
               />
               <Button
                 size="sm"
                 variant="outline"
-                className="gap-1.5 flex-shrink-0"
+                className="w-full sm:w-auto gap-1.5 flex-shrink-0"
                 onClick={handleCopyUrl}
               >
                 {copied ? (
@@ -759,7 +796,7 @@ export default function ResultPage() {
                 ) : (
                   <Copy className="w-4 h-4" />
                 )}
-                {copied ? "コピー済み" : "コピー"}
+                {copied ? "コピー済み" : "リンクをコピー"}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">

@@ -107,3 +107,30 @@
     display: none;
   }
 }
+
+/* Print styles */
+@media print {
+  header, footer, nav, button, [role="dialog"] {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .glass-card {
+    background: white !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow: none !important;
+    border: 1px solid #e5e7eb !important;
+  }
+  [class*="Card"],
+  .space-y-4 > div,
+  .space-y-6 > div {
+    break-inside: avoid;
+  }
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

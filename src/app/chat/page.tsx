@@ -11,6 +11,7 @@ import {
   Sparkles,
   MessageSquareOff,
   Star,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,6 +31,8 @@ import LineShareButton from "@/components/LineShareButton";
 
 // ---------- 定数 ----------
 const FREE_CHAT_LIMIT = 3;
+const CHAT_HISTORY_KEY = "career-ai-chat-history";
+const MAX_STORED_MESSAGES = 50;
 
 // ---------- 型定義 ----------
 interface Message {
@@ -246,6 +249,20 @@ export default function ChatPage() {
       // データがなくてもチャットは利用可
     }
 
+    // Restore chat history
+    try {
+      const saved = localStorage.getItem(CHAT_HISTORY_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Message[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+          setShowSuggestions(false);
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     // 初期残り回数
     const usage = getChatUsage();
     const rem = getRemainingChats();
@@ -259,6 +276,17 @@ export default function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isStreaming, isLimited]);
+
+  // Persist messages to localStorage
+  useEffect(() => {
+    if (messages.length <= 1) return;
+    try {
+      const toSave = messages.slice(-MAX_STORED_MESSAGES);
+      localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(toSave));
+    } catch {
+      // ignore storage errors
+    }
+  }, [messages]);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -401,6 +429,14 @@ export default function ChatPage() {
     sendMessage(text);
   };
 
+  const handleClearHistory = useCallback(() => {
+    localStorage.removeItem(CHAT_HISTORY_KEY);
+    setMessages([INITIAL_MESSAGE]);
+    setShowSuggestions(true);
+    setIsLimited(false);
+    setRemaining(getRemainingChats());
+  }, []);
+
   return (
     <main className="h-dvh flex flex-col">
       {/* ヘッダー */}
@@ -425,6 +461,18 @@ export default function ChatPage() {
             </p>
           </div>
         </div>
+        {messages.length > 1 && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+            onClick={handleClearHistory}
+            aria-label="会話をクリアする"
+            title="会話をクリアする"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        )}
         <RemainingBadge remaining={remaining} />
       </header>
 
@@ -441,7 +489,7 @@ export default function ChatPage() {
 
         {/* 提案テンプレート */}
         <AnimatePresence>
-          {showSuggestions && messages.length === 1 && !isLimited && (
+          {showSuggestions && !isLimited && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
