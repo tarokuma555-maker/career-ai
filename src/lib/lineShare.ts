@@ -6,7 +6,8 @@ export type LineShareContext =
   | "chat-limit"
   | "interview"
   | "interview-review"
-  | "interview-limit";
+  | "interview-limit"
+  | "resume";
 
 export interface ShareUrls {
   resultShareUrl?: string;
@@ -68,6 +69,14 @@ export function buildLineMessage(
       }
       if (urls.resultShareUrl) {
         message += `\n\n📊 診断結果はこちら:\n${urls.resultShareUrl}`;
+      }
+      break;
+
+    case "resume":
+      message =
+        "キャリアAIで作成した書類を共有します。添削・アドバイスをお願いしたいです。";
+      if (urls.resultShareUrl) {
+        message += `\n\n📄 プロフィール・書類はこちら:\n${urls.resultShareUrl}`;
       }
       break;
   }

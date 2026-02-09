@@ -28,6 +28,7 @@ import {
   GraduationCap,
   ExternalLink,
   Share2,
+  FileText,
   Copy,
   Check,
 } from "lucide-react";
@@ -749,12 +750,26 @@ export default function ResultPage() {
           </Button>
         </motion.div>
 
+        {/* 履歴書作成リンク */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.9 }}
+        >
+          <Link href="/resume">
+            <Button variant="outline" className="w-full gap-2">
+              <FileText className="w-4 h-4" />
+              履歴書・職務経歴書を作成する
+            </Button>
+          </Link>
+        </motion.div>
+
         {/* もう一度診断するリンク */}
         <motion.div
           className="text-center pb-8"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.9 }}
+          transition={{ delay: 1.0 }}
         >
           <Link
             href="/diagnosis"
