@@ -119,3 +119,62 @@ export function incrementInterviewReview(): {
     remaining,
   };
 }
+
+// ---------- AI模擬面接の利用回数管理（月1回無料） ----------
+const MOCK_INTERVIEW_KEY = "career-ai-mock-interview-usage";
+const FREE_MOCK_INTERVIEW_LIMIT = 1;
+
+type MockInterviewUsage = {
+  count: number;
+  month: string;
+  isPremium: boolean;
+};
+
+export function getMockInterviewUsage(): MockInterviewUsage {
+  if (typeof window === "undefined") {
+    return { count: 0, month: currentMonth(), isPremium: false };
+  }
+  try {
+    const raw = localStorage.getItem(MOCK_INTERVIEW_KEY);
+    if (!raw) return { count: 0, month: currentMonth(), isPremium: false };
+    const usage = JSON.parse(raw) as MockInterviewUsage;
+    if (usage.month !== currentMonth()) {
+      return { count: 0, month: currentMonth(), isPremium: usage.isPremium };
+    }
+    return usage;
+  } catch {
+    return { count: 0, month: currentMonth(), isPremium: false };
+  }
+}
+
+export function canUseMockInterview(): boolean {
+  const usage = getMockInterviewUsage();
+  if (usage.isPremium) return true;
+  return usage.count < FREE_MOCK_INTERVIEW_LIMIT;
+}
+
+export function getMockInterviewRemaining(): number {
+  const usage = getMockInterviewUsage();
+  if (usage.isPremium) return Infinity;
+  return Math.max(FREE_MOCK_INTERVIEW_LIMIT - usage.count, 0);
+}
+
+export function incrementMockInterview(): {
+  allowed: boolean;
+  remaining: number;
+} {
+  const usage = getMockInterviewUsage();
+  usage.count += 1;
+  usage.month = currentMonth();
+  localStorage.setItem(MOCK_INTERVIEW_KEY, JSON.stringify(usage));
+
+  if (usage.isPremium) {
+    return { allowed: true, remaining: Infinity };
+  }
+
+  const remaining = Math.max(FREE_MOCK_INTERVIEW_LIMIT - usage.count, 0);
+  return {
+    allowed: usage.count <= FREE_MOCK_INTERVIEW_LIMIT,
+    remaining,
+  };
+}

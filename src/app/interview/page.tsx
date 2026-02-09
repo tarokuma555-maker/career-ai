@@ -17,6 +17,7 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
+  Mic,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -629,6 +630,27 @@ export default function InterviewPage() {
                   onShare={createOrUpdateInterviewShare}
                   label="LINEで質問をエージェントに送る"
                 />
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* AI模擬面接バナー */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}>
+            <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-[var(--accent-cyan)]/5">
+              <CardContent className="pt-6 flex flex-col sm:flex-row items-center gap-4">
+                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Mic className="w-6 h-6 text-primary" />
+                </div>
+                <div className="flex-1 text-center sm:text-left">
+                  <p className="text-sm font-bold mb-1">AI模擬面接で実践練習</p>
+                  <p className="text-xs text-muted-foreground">AIが面接官になって、本番さながらの面接練習ができます。音声で回答し、リアルタイムでフィードバックを受けられます。</p>
+                </div>
+                <Button asChild className="gap-2 flex-shrink-0">
+                  <Link href="/mock-interview">
+                    <Mic className="w-4 h-4" />
+                    模擬面接を始める
+                  </Link>
+                </Button>
               </CardContent>
             </Card>
           </motion.div>

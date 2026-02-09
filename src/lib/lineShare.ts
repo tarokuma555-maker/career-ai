@@ -7,7 +7,8 @@ export type LineShareContext =
   | "interview"
   | "interview-review"
   | "interview-limit"
-  | "resume";
+  | "resume"
+  | "mock-interview";
 
 export interface ShareUrls {
   resultShareUrl?: string;
@@ -77,6 +78,14 @@ export function buildLineMessage(
         "キャリアAIで作成した書類を共有します。添削・アドバイスをお願いしたいです。";
       if (urls.resultShareUrl) {
         message += `\n\n📄 プロフィール・書類はこちら:\n${urls.resultShareUrl}`;
+      }
+      break;
+
+    case "mock-interview":
+      message =
+        "キャリアAIでAI模擬面接を受けました。結果を共有します。アドバイスをお願いします。";
+      if (urls.resultShareUrl) {
+        message += `\n\n🎤 模擬面接結果はこちら:\n${urls.resultShareUrl}`;
       }
       break;
   }
