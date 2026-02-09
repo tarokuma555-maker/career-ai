@@ -2,52 +2,71 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+// framer-motion removed: using CSS animations only
 import {
-  Mic,
-  MicOff,
   Video,
   VideoOff,
   SkipForward,
   PhoneOff,
   Loader2,
   User,
-  ChevronRight,
+  Send,
   Clock,
   CheckCircle2,
   AlertTriangle,
-  Keyboard,
+  Target,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import type { MockQuestion, AnswerEvaluation } from "@/lib/mock-interview-types";
 import { incrementMockInterview } from "@/lib/chatLimit";
-import { useSpeechSynthesisV2 } from "@/hooks/useSpeechSynthesisV2";
-import { useSpeechRecognitionV2 } from "@/hooks/useSpeechRecognitionV2";
+import { useCamera } from "@/hooks/useCamera";
 
 // ---------- Types ----------
-type SessionPhase =
-  | "prep"        // Preparation screen (tap to start)
-  | "opening"     // AI greeting (TTS)
-  | "asking"      // AI asking question (TTS + typing)
-  | "waiting"     // Waiting for user to tap mic
-  | "answering"   // User speaking (recognition ON)
-  | "evaluating"  // AI evaluating answer
-  | "feedback"    // Show feedback overlay
-  | "closing";    // Finishing up
+type Phase =
+  | "ready"
+  | "opening"
+  | "questioning"
+  | "answering"
+  | "evaluating"
+  | "feedback"
+  | "closing";
 
-type InputMode = "voice" | "text";
+interface ChatMessage {
+  id: string;
+  role: "interviewer" | "user" | "system";
+  content: string;
+  timestamp: number;
+  feedback?: {
+    score: number;
+    goodPoints: string[];
+    improvementPoints: string[];
+    shortFeedback: string;
+  };
+}
 
 interface SessionData {
   sessionId: string;
   interviewerProfile: { name: string; role: string };
   openingMessage: string;
   firstQuestion: MockQuestion;
-  hasMic?: boolean;
-  inputMode?: string;
+  useCamera?: boolean;
 }
 
-// ---------- Fetch with retry ----------
+const ANSWER_TIME_LIMIT = 120; // seconds
+
+// ---------- Helpers ----------
+let _msgCounter = 0;
+function msgId() {
+  return `m${Date.now()}-${++_msgCounter}`;
+}
+
+function formatTime(sec: number) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 async function fetchRetry(url: string, opts: RequestInit, retries = 2): Promise<Response> {
   for (let i = 0; i <= retries; i++) {
     try {
@@ -64,7 +83,7 @@ async function fetchRetry(url: string, opts: RequestInit, retries = 2): Promise<
   throw new Error("リクエストに失敗しました");
 }
 
-// ---------- Timer ----------
+// ---------- Timer Hook ----------
 function useTimer(running: boolean) {
   const [elapsed, setElapsed] = useState(0);
   const startRef = useRef(0);
@@ -83,59 +102,67 @@ function useTimer(running: boolean) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-// ---------- Camera Hook ----------
-function useCamera() {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const [isCameraOn, setIsCameraOn] = useState(false);
+// ---------- Feedback Card ----------
+function FeedbackCard({ feedback }: {
+  feedback: { score: number; goodPoints: string[]; improvementPoints: string[]; shortFeedback: string };
+}) {
+  const scoreColor =
+    feedback.score >= 80 ? "text-green-400" : feedback.score >= 60 ? "text-yellow-400" : "text-red-400";
 
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setIsCameraOn(true);
-    } catch {
-      setIsCameraOn(false);
-    }
-  }, []);
+  return (
+    <div className="bg-gray-800/80 backdrop-blur border border-gray-700 rounded-2xl p-4 my-2">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-gray-400 text-xs font-bold flex items-center gap-1">
+          <Target className="w-3 h-3" /> 評価
+        </span>
+        <span className={`text-2xl font-bold ${scoreColor}`}>{feedback.score}/100</span>
+      </div>
 
-  const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
-    setIsCameraOn(false);
-  }, []);
+      <div className="w-full bg-gray-700 rounded-full h-2 mb-4">
+        <div
+          className="h-2 rounded-full bg-gradient-to-r from-indigo-500 to-cyan-500 transition-all duration-500"
+          style={{ width: `${feedback.score}%` }}
+        />
+      </div>
 
-  const toggleCamera = useCallback(() => {
-    if (isCameraOn) stopCamera();
-    else startCamera();
-  }, [isCameraOn, startCamera, stopCamera]);
+      {feedback.goodPoints.length > 0 && (
+        <div className="mb-3">
+          <p className="text-green-400 text-xs font-bold mb-1 flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" /> 良い点
+          </p>
+          {feedback.goodPoints.map((p, i) => (
+            <p key={i} className="text-gray-300 text-sm ml-4">・{p}</p>
+          ))}
+        </div>
+      )}
 
-  useEffect(() => {
-    return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
+      {feedback.improvementPoints.length > 0 && (
+        <div className="mb-3">
+          <p className="text-yellow-400 text-xs font-bold mb-1 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" /> 改善ポイント
+          </p>
+          {feedback.improvementPoints.map((p, i) => (
+            <p key={i} className="text-gray-300 text-sm ml-4">・{p}</p>
+          ))}
+        </div>
+      )}
 
-  return { videoRef, isCameraOn, startCamera, stopCamera, toggleCamera };
+      {feedback.shortFeedback && (
+        <p className="text-gray-400 text-xs border-t border-gray-700 pt-2 mt-2">{feedback.shortFeedback}</p>
+      )}
+    </div>
+  );
 }
 
-// ---------- Sound Wave ----------
-function SoundWave({ light }: { light?: boolean }) {
+// ---------- Typing Dots ----------
+function TypingDots() {
   return (
-    <div className="sound-wave">
-      {[...Array(5)].map((_, i) => (
-        <div
-          key={i}
-          className="bar"
-          style={light ? { background: "rgba(255,255,255,0.6)" } : undefined}
+    <div className="flex gap-1 py-1">
+      {[0, 150, 300].map((delay) => (
+        <span
+          key={delay}
+          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+          style={{ animationDelay: `${delay}ms` }}
         />
       ))}
     </div>
@@ -148,38 +175,31 @@ function MockInterviewSession() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("sessionId") || "";
 
-  // Session state
-  const [phase, setPhase] = useState<SessionPhase>("prep");
+  // State
+  const [phase, setPhase] = useState<Phase>("ready");
   const [sessionData, setSessionData] = useState<SessionData | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [currentQuestion, setCurrentQuestion] = useState("");
   const [totalQuestions, setTotalQuestions] = useState(0);
-  const [evaluation, setEvaluation] = useState<AnswerEvaluation | null>(null);
-  const [evalError, setEvalError] = useState<string | null>(null);
+  const [answerText, setAnswerText] = useState("");
+  const [canAnswer, setCanAnswer] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isAiTyping, setIsAiTyping] = useState(false);
+  const [remainingTime, setRemainingTime] = useState(ANSWER_TIME_LIMIT);
+  const [answerStartTime, setAnswerStartTime] = useState<number | null>(null);
+  const [currentQuestion, setCurrentQuestion] = useState("");
 
-  // Input
-  const [inputMode, setInputMode] = useState<InputMode>("voice");
-  const [textAnswer, setTextAnswer] = useState("");
-  const [useCameraMode, setUseCameraMode] = useState(false);
-
-  // Typing animation
-  const [displayedText, setDisplayedText] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const typingCancel = useRef(false);
-
-  // Answer timing
-  const answerStartRef = useRef(Date.now());
-  const lastSpeechRef = useRef(Date.now());
+  // Refs
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const typingCancelRef = useRef(false);
 
   // Hooks
-  const timerRunning = phase !== "prep" && phase !== "closing";
+  const timerRunning = phase !== "ready" && phase !== "closing";
   const timer = useTimer(timerRunning);
-  const tts = useSpeechSynthesisV2();
-  const sr = useSpeechRecognitionV2();
   const cam = useCamera();
 
-  // Load session data from localStorage
+  // ---------- Load session ----------
   useEffect(() => {
     try {
       const raw = localStorage.getItem("career-ai-mock-session");
@@ -188,9 +208,6 @@ function MockInterviewSession() {
         setSessionData(data);
         setCurrentQuestion(data.firstQuestion.question);
         setTotalQuestions(data.firstQuestion?.id ? 8 : 5);
-        if (data.inputMode === "text" || data.hasMic === false) {
-          setInputMode("text");
-        }
       }
     } catch { /* ignore */ }
   }, []);
@@ -209,60 +226,70 @@ function MockInterviewSession() {
     })();
   }, [sessionId]);
 
-  // Check camera preference from localStorage
+  // Auto-scroll
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("career-ai-mock-session");
-      if (raw) {
-        const d = JSON.parse(raw);
-        if (d.useCamera) setUseCameraMode(true);
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isAiTyping]);
+
+  // Answer countdown
+  useEffect(() => {
+    if (!canAnswer || !answerStartTime) return;
+    const iv = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - answerStartTime) / 1000);
+      const remaining = Math.max(0, ANSWER_TIME_LIMIT - elapsed);
+      setRemainingTime(remaining);
+
+      if (remaining <= 0) {
+        clearInterval(iv);
+        // handled below
       }
-    } catch { /* ignore */ }
-  }, []);
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [canAnswer, answerStartTime]);
 
-  // iOS: lock body scroll
+  // Time's up handler
   useEffect(() => {
-    document.body.style.overflow = "hidden";
-    document.body.style.position = "fixed";
-    document.body.style.width = "100%";
-    document.body.style.height = "100%";
-    return () => {
-      document.body.style.overflow = "";
-      document.body.style.position = "";
-      document.body.style.width = "";
-      document.body.style.height = "";
-    };
-  }, []);
-
-  // ---------- Typing animation ----------
-  const typeText = useCallback(async (text: string) => {
-    typingCancel.current = false;
-    setIsTyping(true);
-    setDisplayedText("");
-    for (let i = 0; i < text.length; i++) {
-      if (typingCancel.current) break;
-      await new Promise((r) => setTimeout(r, 30));
-      setDisplayedText(text.slice(0, i + 1));
+    if (remainingTime > 0 || !canAnswer) return;
+    if (answerText.trim()) {
+      handleSubmitAnswer();
+    } else {
+      handleSkipQuestion();
     }
-    setDisplayedText(text);
-    setIsTyping(false);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingTime, canAnswer]);
 
-  // ---------- Show question with TTS + typing ----------
-  const showQuestionWithSpeech = useCallback(
+  // Reset timer each question
+  useEffect(() => {
+    setRemainingTime(ANSWER_TIME_LIMIT);
+  }, [currentQuestionIndex]);
+
+  // ---------- Add interviewer message with typing animation ----------
+  const addInterviewerMessage = useCallback(
     async (text: string) => {
-      const typingDone = typeText(text);
+      const id = msgId();
+      typingCancelRef.current = false;
+      setIsAiTyping(true);
 
-      if (tts.isSupported) {
-        const spoken = await tts.speak(text);
-        if (!spoken) {
-          // TTS failed, just wait for typing
-          await typingDone;
+      // Show typing dots for 800ms
+      await new Promise((r) => setTimeout(r, 800));
+      if (typingCancelRef.current) { setIsAiTyping(false); return; }
+
+      // Add empty message
+      setMessages((prev) => [...prev, { id, role: "interviewer", content: "", timestamp: Date.now() }]);
+      setIsAiTyping(false);
+
+      // Type character by character
+      for (let i = 0; i < text.length; i++) {
+        if (typingCancelRef.current) {
+          // Show full text immediately on cancel
+          setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, content: text } : m)));
+          break;
         }
+        await new Promise((r) => setTimeout(r, 25));
+        setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, content: text.slice(0, i + 1) } : m)));
       }
-      await typingDone;
     },
-    [tts, typeText],
+    [],
   );
 
   // ---------- Navigate to result ----------
@@ -283,61 +310,49 @@ function MockInterviewSession() {
     [router],
   );
 
-  // ---------- Start interview (called from prep screen tap) ----------
+  // ---------- Start interview ----------
   const handleStartInterview = useCallback(async () => {
     if (!sessionData) return;
 
-    // Activate TTS in user gesture context
-    tts.activate();
-
-    // Start camera if chosen
-    if (useCameraMode) {
+    // Start camera if configured
+    if (sessionData.useCamera) {
       await cam.startCamera();
     }
 
     setPhase("opening");
 
-    // Speak opening message
-    if (tts.isSupported) {
-      await tts.speak(sessionData.openingMessage);
-    } else {
-      await typeText(sessionData.openingMessage);
-      await new Promise((r) => setTimeout(r, 1500));
-    }
+    // Opening message
+    await addInterviewerMessage(sessionData.openingMessage);
 
-    // Move to first question
-    setPhase("asking");
-    await showQuestionWithSpeech(sessionData.firstQuestion.question);
-    setPhase("waiting");
-    answerStartRef.current = Date.now();
-  }, [sessionData, tts, cam, useCameraMode, typeText, showQuestionWithSpeech]);
+    // First question
+    setPhase("questioning");
+    await addInterviewerMessage(sessionData.firstQuestion.question);
 
-  // ---------- Start answering (mic tap) ----------
-  const handleStartAnswering = useCallback(() => {
-    if (inputMode === "voice") {
-      sr.startListening();
-    }
     setPhase("answering");
-    answerStartRef.current = Date.now();
-    lastSpeechRef.current = Date.now();
-  }, [inputMode, sr]);
+    setCanAnswer(true);
+    setAnswerStartTime(Date.now());
+    textareaRef.current?.focus();
+  }, [sessionData, cam, addInterviewerMessage]);
 
-  // ---------- Stop answering ----------
-  const handleStopAnswering = useCallback(async () => {
-    if (inputMode === "voice") sr.stopListening();
+  // ---------- Submit answer ----------
+  const handleSubmitAnswer = useCallback(async () => {
+    const text = answerText.trim();
+    if (!text || isProcessing) return;
 
-    const answerText = inputMode === "voice" ? sr.getTranscript() : textAnswer;
+    // Add user message
+    setMessages((prev) => [...prev, { id: msgId(), role: "user", content: text, timestamp: Date.now() }]);
+    setAnswerText("");
+    setCanAnswer(false);
+    setAnswerStartTime(null);
 
-    if (!answerText.trim()) {
-      alert("回答が空です。もう一度お話しください。");
-      setPhase("waiting");
-      return;
-    }
+    // Reset textarea height
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
 
     setPhase("evaluating");
     setIsProcessing(true);
+    setIsAiTyping(true);
 
-    const duration = Math.round((Date.now() - answerStartRef.current) / 1000);
+    const duration = Math.round((Date.now() - (answerStartTime || Date.now())) / 1000);
 
     try {
       const res = await fetchRetry("/api/mock-interview/evaluate", {
@@ -347,57 +362,61 @@ function MockInterviewSession() {
           sessionId,
           questionIndex: currentQuestionIndex,
           question: currentQuestion,
-          answer: answerText,
+          answer: text,
           answerDuration: duration,
         }),
       });
+
+      setIsAiTyping(false);
 
       if (!res.ok) {
         const d = await res.json();
         throw new Error(d.error || "評価に失敗しました");
       }
 
-      const ev = await res.json();
-      setEvaluation(ev);
-      setEvalError(null);
+      const evaluation: AnswerEvaluation = await res.json();
+
+      // Add feedback as system message
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: msgId(),
+          role: "system",
+          content: "",
+          timestamp: Date.now(),
+          feedback: {
+            score: evaluation.score,
+            goodPoints: evaluation.goodPoints,
+            improvementPoints: evaluation.improvementPoints,
+            shortFeedback: evaluation.shortFeedback,
+          },
+        },
+      ]);
+
       setPhase("feedback");
+
+      // Wait then move to next question
+      await new Promise((r) => setTimeout(r, 1500));
+      await handleNextQuestion();
     } catch (err) {
-      setEvalError(err instanceof Error ? err.message : "評価に失敗しました");
-      setPhase("feedback");
+      setIsAiTyping(false);
+      // Add error message
+      setMessages((prev) => [
+        ...prev,
+        { id: msgId(), role: "system", content: err instanceof Error ? err.message : "評価に失敗しました", timestamp: Date.now() },
+      ]);
+      // Still proceed to next question
+      await new Promise((r) => setTimeout(r, 1000));
+      await handleNextQuestion();
     } finally {
       setIsProcessing(false);
     }
-  }, [inputMode, sr, textAnswer, sessionId, currentQuestionIndex, currentQuestion]);
-
-  // ---------- Silence detection ----------
-  useEffect(() => {
-    if (phase === "answering" && inputMode === "voice") {
-      lastSpeechRef.current = Date.now();
-    }
-  }, [sr.transcript, sr.interimText, phase, inputMode]);
-
-  useEffect(() => {
-    if (phase !== "answering" || inputMode !== "voice") return;
-
-    const checker = setInterval(() => {
-      const silence = Date.now() - lastSpeechRef.current;
-      if (silence > 3000 && sr.transcript.length > 0) {
-        handleStopAnswering();
-      }
-    }, 500);
-
-    return () => clearInterval(checker);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, inputMode, sr.transcript]);
+  }, [answerText, isProcessing, sessionId, currentQuestionIndex, currentQuestion, answerStartTime]);
 
   // ---------- Next question ----------
   const handleNextQuestion = useCallback(async () => {
-    setEvaluation(null);
-    setEvalError(null);
-    setTextAnswer("");
-    setIsProcessing(true);
-    typingCancel.current = true;
-    setDisplayedText("");
+    typingCancelRef.current = false;
 
     try {
       const res = await fetchRetry("/api/mock-interview/next", {
@@ -417,28 +436,37 @@ function MockInterviewSession() {
       setCurrentQuestionIndex(data.questionIndex);
       setCurrentQuestion(data.question);
 
-      setPhase("asking");
-      if (data.transition && tts.isSupported) {
-        await tts.speak(data.transition);
+      setPhase("questioning");
+
+      // Transition message
+      if (data.transition) {
+        await addInterviewerMessage(data.transition);
       }
-      await showQuestionWithSpeech(data.question);
-      setPhase("waiting");
-      answerStartRef.current = Date.now();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "エラーが発生しました");
-    } finally {
-      setIsProcessing(false);
+
+      // Next question
+      await addInterviewerMessage(data.question);
+
+      setPhase("answering");
+      setCanAnswer(true);
+      setAnswerStartTime(Date.now());
+      textareaRef.current?.focus();
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { id: msgId(), role: "system", content: "次の質問の取得に失敗しました。", timestamp: Date.now() },
+      ]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, currentQuestionIndex, tts, showQuestionWithSpeech]);
+  }, [sessionId, currentQuestionIndex, addInterviewerMessage]);
 
   // ---------- Finish ----------
   const handleFinish = useCallback(async () => {
     setPhase("closing");
-    tts.stop();
-    sr.stopListening();
+    setCanAnswer(false);
     cam.stopCamera();
-    typingCancel.current = true;
+    typingCancelRef.current = true;
+
+    await addInterviewerMessage("お疲れ様でした。結果を集計しています...");
 
     incrementMockInterview();
 
@@ -461,93 +489,109 @@ function MockInterviewSession() {
     try { localStorage.removeItem("career-ai-mock-progress"); } catch { /* ignore */ }
 
     navigateToResult(sessionId);
-  }, [sessionId, sessionData, tts, sr, cam, navigateToResult]);
+  }, [sessionId, sessionData, cam, addInterviewerMessage, navigateToResult]);
 
   // ---------- Skip ----------
-  const handleSkip = useCallback(() => {
-    sr.stopListening();
-    tts.stop();
-    typingCancel.current = true;
-    handleNextQuestion();
-  }, [sr, tts, handleNextQuestion]);
+  const handleSkipQuestion = useCallback(async () => {
+    setCanAnswer(false);
+    setAnswerStartTime(null);
+    setAnswerText("");
+    typingCancelRef.current = true;
+
+    setMessages((prev) => [
+      ...prev,
+      { id: msgId(), role: "system", content: "この質問をスキップしました。", timestamp: Date.now() },
+    ]);
+
+    await new Promise((r) => setTimeout(r, 500));
+    await handleNextQuestion();
+  }, [handleNextQuestion]);
 
   // ---------- End early ----------
-  const handleEndEarly = useCallback(() => {
+  const handleEndInterview = useCallback(() => {
     if (confirm("面接を終了しますか？これまでの回答は保存されます。")) {
       handleFinish();
     }
   }, [handleFinish]);
 
-  // ---------- Toggle mic ----------
-  const handleMicToggle = useCallback(() => {
-    if (phase === "waiting") {
-      handleStartAnswering();
-    } else if (phase === "answering") {
-      handleStopAnswering();
-    }
-  }, [phase, handleStartAnswering, handleStopAnswering]);
-
   // ---------- Loading ----------
   if (!sessionData) {
     return (
-      <main className="h-[100dvh] flex items-center justify-center bg-[#1a1a2e]">
+      <main className="h-[100dvh] flex items-center justify-center bg-[#111827]">
         <Loader2 className="w-8 h-8 animate-spin text-white" />
       </main>
     );
   }
 
+  const interviewerName = sessionData.interviewerProfile.name;
   const progressPct = totalQuestions > 0
-    ? ((currentQuestionIndex + (phase === "feedback" ? 1 : 0)) / totalQuestions) * 100
+    ? ((currentQuestionIndex + (phase === "feedback" || phase === "evaluating" ? 1 : 0)) / totalQuestions) * 100
     : 0;
 
   // ============================================================
-  // Preparation Screen
+  // Ready Screen
   // ============================================================
-  if (phase === "prep") {
+  if (phase === "ready") {
     return (
-      <main className="h-[100dvh] flex flex-col bg-[#1a1a2e] text-white pb-[env(safe-area-inset-bottom)]">
-        <div className="flex-1 flex flex-col items-center justify-center px-6 space-y-6">
-          {/* Interviewer info */}
-          <div className="w-20 h-20 rounded-full bg-gray-600 flex items-center justify-center">
-            <User className="w-10 h-10 text-gray-300" />
-          </div>
-          <div className="text-center">
-            <p className="text-lg font-bold">{sessionData.interviewerProfile.name}</p>
-            <p className="text-sm text-gray-400">{sessionData.interviewerProfile.role}</p>
-          </div>
+      <main className="h-[100dvh] flex flex-col bg-[#111827] text-white pb-[env(safe-area-inset-bottom)]">
+        <div className="flex-1 flex flex-col items-center justify-center px-6 space-y-5">
+          <Target className="w-10 h-10 text-indigo-400" />
+          <h1 className="text-xl font-bold">AI模擬面接</h1>
 
-          <div className="flex gap-4 text-sm text-gray-400">
-            <span>質問数: {totalQuestions || "?"}問</span>
-            <span>約{totalQuestions === 5 ? "10" : "15"}分</span>
+          {/* Camera preview */}
+          <div className="w-full max-w-[280px] aspect-[4/3] bg-gray-800 rounded-xl overflow-hidden relative">
+            {cam.isCameraOn ? (
+              <video
+                ref={cam.videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+                style={{ transform: "scaleX(-1)" }}
+              />
+            ) : (
+              <div className="w-full h-full flex flex-col items-center justify-center">
+                <User className="w-12 h-12 text-gray-500 mb-2" />
+                <p className="text-gray-500 text-sm">カメラプレビュー</p>
+              </div>
+            )}
           </div>
 
           {/* Camera toggle */}
           <button
-            className="flex items-center gap-2 px-4 py-2 rounded-full border border-gray-600 text-sm touch-manipulation min-h-[44px]"
-            onClick={() => setUseCameraMode(!useCameraMode)}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full border border-gray-600 text-sm touch-manipulation min-h-[44px]"
+            onClick={cam.toggleCamera}
           >
-            {useCameraMode ? (
-              <><Video className="w-4 h-4 text-green-400" /> カメラ: ON</>
+            {cam.isCameraOn ? (
+              <><Video className="w-4 h-4 text-green-400" /> カメラON</>
             ) : (
-              <><VideoOff className="w-4 h-4 text-gray-400" /> カメラ: OFF</>
+              <><VideoOff className="w-4 h-4 text-gray-400" /> カメラOFF</>
             )}
           </button>
+          {cam.cameraError && <p className="text-red-400 text-xs">{cam.cameraError}</p>}
 
-          {/* Input mode */}
-          {!sr.isSupported && (
-            <p className="text-xs text-gray-500">音声認識非対応 — テキスト入力モード</p>
-          )}
+          {/* Interviewer info */}
+          <div className="text-center text-sm space-y-1">
+            <p className="text-gray-400">面接官</p>
+            <p className="font-bold">{interviewerName}</p>
+            <p className="text-gray-400 text-xs">{sessionData.interviewerProfile.role}</p>
+          </div>
+
+          <div className="flex gap-4 text-xs text-gray-500">
+            <span>質問数: {totalQuestions || "?"}問</span>
+            <span>制限時間: 各2分</span>
+          </div>
 
           {/* Start button */}
           <button
-            className="w-full max-w-xs py-5 rounded-2xl bg-gradient-to-r from-indigo-500 to-cyan-500 text-white text-lg font-bold active:scale-[0.97] transition-transform touch-manipulation"
+            className="w-full max-w-xs py-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-cyan-500 text-white text-lg font-bold active:scale-[0.97] transition-transform touch-manipulation"
             onClick={handleStartInterview}
           >
-            タップして面接を開始する
+            面接を開始する
           </button>
 
-          <p className="text-xs text-gray-500 text-center">
-            静かな環境で実施してください
+          <p className="text-xs text-gray-500 text-center leading-relaxed">
+            テキストで回答する形式です。<br />面接官の質問に文章で回答してください。
           </p>
         </div>
       </main>
@@ -555,13 +599,10 @@ function MockInterviewSession() {
   }
 
   // ============================================================
-  // Main Interview UI (Zoom-style)
+  // Main Interview UI
   // ============================================================
-  const isMicActive = phase === "answering" && inputMode === "voice";
-  const showFeedbackOverlay = phase === "feedback";
-
   return (
-    <main className="h-[100dvh] flex flex-col bg-[#1a1a2e] text-white overflow-hidden pb-[env(safe-area-inset-bottom)]">
+    <main className="h-[100dvh] flex flex-col bg-[#0f1117] text-white overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 px-4 pt-3 pb-2 bg-[#111827]">
         <div className="flex items-center justify-between mb-1.5">
@@ -583,67 +624,23 @@ function MockInterviewSession() {
       </div>
 
       {/* Video area */}
-      <div className="flex-1 flex flex-col min-h-0 p-2 gap-2">
-        {/* AI Interviewer Panel */}
-        <div className="flex-1 rounded-xl bg-[#2d2d44] relative overflow-hidden flex flex-col items-center justify-center px-4">
-          {/* Avatar */}
-          <div className="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center mb-2">
-            <User className="w-8 h-8 text-gray-300" />
+      <div className="flex-shrink-0 flex gap-2 p-2 bg-gray-900">
+        {/* AI Interviewer */}
+        <div className="flex-1 bg-gray-800 rounded-xl p-3 flex flex-col items-center justify-center min-h-[120px]">
+          <div className="w-12 h-12 rounded-full bg-gray-600 flex items-center justify-center mb-1.5">
+            <User className="w-6 h-6 text-gray-300" />
           </div>
-          <p className="text-sm font-bold">{sessionData.interviewerProfile.name}</p>
-          <p className="text-xs text-gray-400 mb-3">{sessionData.interviewerProfile.role}</p>
-
-          {/* AI question bubble */}
-          {(phase === "asking" || phase === "waiting" || phase === "answering" || phase === "evaluating" || phase === "feedback") && (
-            <div className="w-full max-w-md bg-white/10 backdrop-blur-sm rounded-xl p-3 mb-2">
-              <p className="text-sm leading-relaxed">
-                {isTyping ? displayedText : currentQuestion}
-                {isTyping && (
-                  <span className="inline-block w-0.5 h-3.5 bg-white animate-pulse ml-0.5 align-middle" />
-                )}
-              </p>
-            </div>
-          )}
-
-          {/* Opening text */}
-          {phase === "opening" && (
-            <div className="w-full max-w-md bg-white/10 backdrop-blur-sm rounded-xl p-3 mb-2">
-              <p className="text-sm leading-relaxed">
-                {displayedText || sessionData.openingMessage}
-                {isTyping && (
-                  <span className="inline-block w-0.5 h-3.5 bg-white animate-pulse ml-0.5 align-middle" />
-                )}
-              </p>
-            </div>
-          )}
-
-          {/* TTS wave */}
-          {tts.isSpeaking && (
-            <div className="mt-1">
-              <SoundWave light />
-            </div>
-          )}
-
-          {/* Evaluating spinner */}
-          {phase === "evaluating" && (
-            <div className="mt-2 flex items-center gap-2 text-sm text-gray-300">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              分析中...
-            </div>
-          )}
-
-          {/* Closing spinner */}
-          {phase === "closing" && (
-            <div className="mt-2 flex items-center gap-2 text-sm text-gray-300">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              結果を生成中...
+          <p className="text-white font-bold text-xs">{interviewerName}</p>
+          <p className="text-gray-400 text-[10px]">{sessionData.interviewerProfile.role}</p>
+          {isAiTyping && (
+            <div className="mt-1.5">
+              <TypingDots />
             </div>
           )}
         </div>
 
-        {/* User Panel */}
-        <div className="h-[35%] min-h-[140px] rounded-xl bg-[#2d2d44] relative overflow-hidden">
-          {/* Camera video */}
+        {/* User Camera */}
+        <div className="w-[120px] bg-gray-800 rounded-xl overflow-hidden relative min-h-[120px]">
           {cam.isCameraOn ? (
             <video
               ref={cam.videoRef}
@@ -655,267 +652,153 @@ function MockInterviewSession() {
             />
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center">
-              <div className="w-14 h-14 rounded-full bg-gray-600 flex items-center justify-center">
-                <User className="w-7 h-7 text-gray-300" />
-              </div>
-              <p className="text-xs text-gray-500 mt-2">あなた</p>
+              <User className="w-8 h-8 text-gray-600 mb-1" />
+              <p className="text-gray-500 text-[10px]">カメラOFF</p>
             </div>
           )}
-
-          {/* Subtitle overlay */}
-          {(phase === "answering" || phase === "waiting") && inputMode === "voice" && (
-            <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-3 py-2">
-              <p className="text-sm text-white truncate">
-                {sr.transcript || sr.interimText ? (
-                  <>
-                    {sr.transcript}
-                    {sr.interimText && <span className="text-gray-400">{sr.interimText}</span>}
-                  </>
-                ) : (
-                  phase === "answering" ? (
-                    <span className="text-gray-400">話してください...</span>
-                  ) : null
-                )}
-              </p>
-            </div>
-          )}
-
-          {/* Name tag */}
-          <div className="absolute top-2 left-2">
-            <span className="text-xs bg-black/50 px-2 py-0.5 rounded">あなた</span>
-          </div>
-
-          {/* Mic indicator */}
-          {isMicActive && (
-            <div className="absolute top-2 right-2">
-              <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Text input area (when in text mode and answering) */}
-      {inputMode === "text" && (phase === "waiting" || phase === "answering") && (
-        <div className="flex-shrink-0 px-3 pb-2">
-          <div className="flex gap-2">
-            <textarea
-              className="flex-1 p-3 rounded-xl bg-gray-800 text-white border border-gray-600 focus:border-indigo-500 focus:outline-none min-h-[48px] max-h-[100px] text-base resize-none"
-              style={{ fontSize: "16px" }}
-              placeholder="回答を入力..."
-              value={textAnswer}
-              onChange={(e) => {
-                setTextAnswer(e.target.value);
-                if (phase === "waiting") setPhase("answering");
-              }}
-              rows={2}
-            />
-            <button
-              className="w-14 h-14 rounded-full bg-indigo-500 text-white flex items-center justify-center touch-manipulation disabled:opacity-50 flex-shrink-0"
-              disabled={!textAnswer.trim() || isProcessing}
-              onClick={() => {
-                handleStopAnswering();
-              }}
-            >
-              <ChevronRight className="w-6 h-6" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Control bar */}
-      <div className="flex-shrink-0 bg-[#111827] px-4 py-3">
-        <div className="flex items-center justify-center gap-6">
-          {/* Mic button */}
-          {inputMode === "voice" ? (
-            <button
-              className={`w-14 h-14 rounded-full flex flex-col items-center justify-center touch-manipulation transition-colors ${
-                isMicActive
-                  ? "bg-white text-gray-900"
-                  : phase === "waiting"
-                    ? "bg-gray-700 text-white"
-                    : "bg-gray-800 text-gray-500"
-              }`}
-              onClick={handleMicToggle}
-              disabled={phase !== "waiting" && phase !== "answering"}
-            >
-              {isMicActive ? <Mic className="w-6 h-6" /> : <MicOff className="w-5 h-5" />}
-            </button>
-          ) : (
-            <button
-              className="w-14 h-14 rounded-full bg-gray-800 text-gray-500 flex flex-col items-center justify-center touch-manipulation"
-              onClick={() => {
-                if (sr.isSupported) setInputMode("voice");
-              }}
-            >
-              <Keyboard className="w-5 h-5" />
-            </button>
-          )}
-          <span className="text-[10px] text-gray-500 absolute mt-16">
-            {inputMode === "voice" ? (isMicActive ? "停止" : "マイク") : "テキスト"}
-          </span>
-
-          {/* Camera button */}
           <button
-            className={`w-14 h-14 rounded-full flex items-center justify-center touch-manipulation ${
-              cam.isCameraOn ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-500"
-            }`}
+            className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center touch-manipulation"
             onClick={cam.toggleCamera}
           >
-            {cam.isCameraOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-          </button>
-
-          {/* Skip button */}
-          <button
-            className="w-14 h-14 rounded-full bg-gray-700 text-white flex items-center justify-center touch-manipulation disabled:opacity-50"
-            onClick={handleSkip}
-            disabled={phase === "evaluating" || phase === "closing" || isProcessing}
-          >
-            <SkipForward className="w-5 h-5" />
-          </button>
-
-          {/* End button */}
-          <button
-            className="w-14 h-14 rounded-full bg-red-600 text-white flex items-center justify-center touch-manipulation"
-            onClick={handleEndEarly}
-          >
-            <PhoneOff className="w-5 h-5" />
+            {cam.isCameraOn ? <Video className="w-3.5 h-3.5" /> : <VideoOff className="w-3.5 h-3.5" />}
           </button>
         </div>
-
-        {/* Button labels */}
-        <div className="flex items-center justify-center gap-6 mt-1">
-          {["マイク", "カメラ", "スキップ", "終了"].map((label) => (
-            <span key={label} className="w-14 text-center text-[10px] text-gray-500">
-              {label}
-            </span>
-          ))}
-        </div>
-
-        {/* Input mode toggle */}
-        {sr.isSupported && (
-          <button
-            className="w-full text-center text-xs text-gray-500 underline mt-2 touch-manipulation min-h-[32px]"
-            onClick={() => setInputMode((p) => (p === "voice" ? "text" : "voice"))}
-          >
-            {inputMode === "voice" ? "テキストで回答する" : "音声で回答する"}
-          </button>
-        )}
       </div>
 
-      {/* ============================================================ */}
-      {/* Feedback Overlay */}
-      {/* ============================================================ */}
-      <AnimatePresence>
-        {showFeedbackOverlay && (
-          <motion.div
-            className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="w-full max-w-md bg-[#1e1e36] rounded-2xl p-5 space-y-4 max-h-[80dvh] overflow-y-auto"
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-            >
-              {evalError ? (
-                <div className="text-center space-y-3">
-                  <AlertTriangle className="w-10 h-10 text-yellow-500 mx-auto" />
-                  <p className="text-sm text-gray-300">{evalError}</p>
+      {/* Chat area */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-gray-950">
+        {messages.map((msg) => (
+          <div key={msg.id}>
+            {msg.role === "interviewer" ? (
+              <div className="flex items-start gap-2 max-w-[85%]">
+                <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center shrink-0">
+                  <User className="w-3.5 h-3.5 text-gray-400" />
                 </div>
-              ) : evaluation ? (
-                <>
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-bold">ワンポイントアドバイス</p>
-                    <span
-                      className="text-sm font-bold px-3 py-1 rounded-full"
-                      style={{
-                        backgroundColor:
-                          evaluation.score >= 80
-                            ? "rgba(34,197,94,0.2)"
-                            : evaluation.score >= 60
-                              ? "rgba(59,130,246,0.2)"
-                              : "rgba(249,115,22,0.2)",
-                        color:
-                          evaluation.score >= 80
-                            ? "#22c55e"
-                            : evaluation.score >= 60
-                              ? "#3b82f6"
-                              : "#f97316",
-                      }}
-                    >
-                      {evaluation.score}/100
-                    </span>
+                <div>
+                  <p className="text-gray-500 text-[10px] mb-0.5">{interviewerName}</p>
+                  <div className="bg-gray-800 text-white p-3 rounded-2xl rounded-tl-none text-sm leading-relaxed">
+                    {msg.content}
                   </div>
-
-                  {/* Score bar */}
-                  <div className="h-2 rounded-full bg-gray-700 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-500 transition-all"
-                      style={{ width: `${evaluation.score}%` }}
-                    />
+                </div>
+              </div>
+            ) : msg.role === "user" ? (
+              <div className="flex justify-end">
+                <div className="max-w-[85%]">
+                  <div className="bg-indigo-600 text-white p-3 rounded-2xl rounded-tr-none text-sm leading-relaxed">
+                    {msg.content}
                   </div>
+                </div>
+              </div>
+            ) : msg.feedback ? (
+              <div className="mx-auto max-w-[90%]">
+                <FeedbackCard feedback={msg.feedback} />
+              </div>
+            ) : (
+              <div className="text-center">
+                <span className="text-gray-500 text-xs bg-gray-800/50 px-3 py-1 rounded-full">
+                  {msg.content}
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
 
-                  {evaluation.goodPoints.length > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-green-400 mb-1 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> 良い点
-                      </p>
-                      <ul className="space-y-0.5">
-                        {evaluation.goodPoints.map((p, i) => (
-                          <li key={i} className="text-sm text-gray-300 flex items-start gap-1.5">
-                            <span className="text-green-400 mt-0.5 flex-shrink-0">+</span>
-                            {p}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {evaluation.improvementPoints.length > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-orange-400 mb-1 flex items-center gap-1">
-                        <AlertTriangle className="w-3.5 h-3.5" /> 改善ポイント
-                      </p>
-                      <ul className="space-y-0.5">
-                        {evaluation.improvementPoints.map((p, i) => (
-                          <li key={i} className="text-sm text-gray-300 flex items-start gap-1.5">
-                            <span className="text-orange-400 mt-0.5 flex-shrink-0">-</span>
-                            {p}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  <p className="text-sm text-gray-400 border-t border-gray-700 pt-3">
-                    {evaluation.shortFeedback}
-                  </p>
-                </>
-              ) : null}
-
-              <button
-                className="w-full py-4 rounded-xl text-lg font-bold bg-gradient-to-r from-indigo-500 to-cyan-500 text-white active:scale-[0.98] transition-transform touch-manipulation disabled:opacity-50"
-                onClick={handleNextQuestion}
-                disabled={isProcessing}
-              >
-                {isProcessing ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    読み込み中...
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    次の質問へ
-                    <ChevronRight className="w-5 h-5" />
-                  </span>
-                )}
-              </button>
-            </motion.div>
-          </motion.div>
+        {/* AI typing indicator */}
+        {isAiTyping && (
+          <div className="flex items-start gap-2 max-w-[85%]">
+            <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center shrink-0">
+              <User className="w-3.5 h-3.5 text-gray-400" />
+            </div>
+            <div className="bg-gray-800 p-3 rounded-2xl rounded-tl-none">
+              <TypingDots />
+            </div>
+          </div>
         )}
-      </AnimatePresence>
+
+        {/* Closing indicator */}
+        {phase === "closing" && (
+          <div className="flex items-center justify-center gap-2 py-4">
+            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+            <span className="text-gray-400 text-sm">結果を集計中...</span>
+          </div>
+        )}
+
+        <div ref={chatBottomRef} />
+      </div>
+
+      {/* Input area */}
+      <div
+        className="flex-shrink-0 bg-gray-900 border-t border-gray-700 px-4 pt-3"
+        style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+      >
+        {/* Timer */}
+        {canAnswer && (
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-gray-400 text-xs">
+              質問 {currentQuestionIndex + 1}/{totalQuestions}
+            </span>
+            <span className={`text-sm font-mono ${remainingTime < 30 ? "text-red-400" : "text-gray-300"}`}>
+              <Clock className="w-3 h-3 inline mr-1" />
+              残り {formatTime(remainingTime)}
+            </span>
+          </div>
+        )}
+
+        {/* Text input + send */}
+        <div className="flex gap-2 items-end">
+          <textarea
+            ref={textareaRef}
+            className="flex-1 p-3 rounded-xl bg-gray-800 text-white border border-gray-600 focus:border-indigo-500 focus:outline-none resize-none text-base leading-relaxed placeholder-gray-500 min-h-[48px] max-h-[150px]"
+            style={{ fontSize: "16px" }}
+            placeholder={canAnswer ? "回答を入力してください..." : "面接官の質問をお待ちください..."}
+            value={answerText}
+            onChange={(e) => {
+              setAnswerText(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = Math.min(e.target.scrollHeight, 150) + "px";
+            }}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                e.preventDefault();
+                handleSubmitAnswer();
+              }
+            }}
+            disabled={!canAnswer || isProcessing}
+            rows={1}
+          />
+          <button
+            className="w-12 h-12 rounded-full bg-indigo-600 text-white flex items-center justify-center disabled:opacity-40 active:scale-95 transition-transform touch-manipulation shrink-0"
+            disabled={!answerText.trim() || !canAnswer || isProcessing}
+            onClick={handleSubmitAnswer}
+          >
+            {isProcessing ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Send className="w-5 h-5" />
+            )}
+          </button>
+        </div>
+
+        {/* Skip / End */}
+        <div className="flex justify-between mt-2">
+          <button
+            className="text-gray-500 text-sm py-2 px-3 min-h-[44px] touch-manipulation disabled:opacity-40"
+            onClick={handleSkipQuestion}
+            disabled={isProcessing || phase === "closing"}
+          >
+            <SkipForward className="w-3.5 h-3.5 inline mr-1" />
+            スキップ
+          </button>
+          <button
+            className="text-red-400 text-sm py-2 px-3 min-h-[44px] touch-manipulation disabled:opacity-40"
+            onClick={handleEndInterview}
+            disabled={isProcessing || phase === "closing"}
+          >
+            <PhoneOff className="w-3.5 h-3.5 inline mr-1" />
+            面接を終了
+          </button>
+        </div>
+      </div>
     </main>
   );
 }
@@ -925,7 +808,7 @@ export default function MockInterviewSessionPage() {
   return (
     <Suspense
       fallback={
-        <main className="h-[100dvh] flex items-center justify-center bg-[#1a1a2e]">
+        <main className="h-[100dvh] flex items-center justify-center bg-[#111827]">
           <Loader2 className="w-8 h-8 animate-spin text-white" />
         </main>
       }

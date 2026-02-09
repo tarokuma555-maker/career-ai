@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
-import { Mic, ArrowLeft, Loader2, FileText, Brain, AlertTriangle, Info, Keyboard, Video, VideoOff } from "lucide-react";
+import { motion } from "framer-motion";
+import { MessageSquare, ArrowLeft, Loader2, FileText, Brain, AlertTriangle, Info, Video, VideoOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +48,6 @@ export default function MockInterviewPage() {
   const [remaining, setRemaining] = useState(1);
   const [hasResumeData, setHasResumeData] = useState(false);
   const [hasDiagnosisData, setHasDiagnosisData] = useState(false);
-  const [showMicModal, setShowMicModal] = useState(false);
   const [useCamera, setUseCamera] = useState(true);
 
   useEffect(() => {
@@ -64,27 +63,8 @@ export default function MockInterviewPage() {
   const selectedPosition = position === "その他" ? customPosition : position;
   const canStart = selectedIndustry && selectedPosition && !isStarting;
 
-  // Check mic permission
-  const checkMicPermission = useCallback(async (): Promise<boolean> => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(track => track.stop());
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  // Start interview (called after mic check)
-  const startInterview = useCallback(async (hasMic: boolean) => {
+  const startInterview = useCallback(async () => {
     setIsStarting(true);
-
-    // Activate TTS in user gesture context (critical for iOS)
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      const dummy = new SpeechSynthesisUtterance("");
-      dummy.volume = 0;
-      window.speechSynthesis.speak(dummy);
-    }
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -131,15 +111,11 @@ export default function MockInterviewPage() {
 
       const data = await res.json();
 
-      // Save session with mic/camera preferences
       localStorage.setItem("career-ai-mock-session", JSON.stringify({
         ...data,
-        hasMic,
-        inputMode: hasMic ? "voice" : "text",
         useCamera,
       }));
 
-      // Use window.location.href for reliable iOS navigation
       window.location.href = `/mock-interview/session?sessionId=${data.sessionId}`;
     } catch (err) {
       alert(err instanceof Error ? err.message : "面接の開始に失敗しました");
@@ -148,16 +124,9 @@ export default function MockInterviewPage() {
     }
   }, [selectedIndustry, selectedPosition, interviewType, questionCount, useCamera]);
 
-  // Handle start button click - check mic first
   const handleStart = async () => {
     if (!canStart) return;
-
-    const hasMic = await checkMicPermission();
-    if (!hasMic) {
-      setShowMicModal(true);
-      return;
-    }
-    await startInterview(true);
+    await startInterview();
   };
 
   // 利用制限に達している場合
@@ -204,11 +173,11 @@ export default function MockInterviewPage() {
               面接対策に戻る
             </Link>
             <h1 className="text-2xl font-bold flex items-center gap-2">
-              <Mic className="w-6 h-6 text-primary" />
+              <MessageSquare className="w-6 h-6 text-primary" />
               AI模擬面接
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              AIが面接官になって、本番さながらの面接練習ができます
+              AIが面接官になって、テキストチャット形式で面接練習ができます
             </p>
           </div>
 
@@ -325,52 +294,33 @@ export default function MockInterviewPage() {
                 </div>
               </div>
 
-              {/* Interview Format (Camera) */}
+              {/* Camera Toggle */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">面接形式</label>
-                <div className="space-y-2">
-                  <label
-                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                      useCamera ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="cameraMode"
-                      checked={useCamera}
-                      onChange={() => setUseCamera(true)}
-                      className="mt-0.5"
-                    />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium flex items-center gap-1.5">
-                        <Video className="w-3.5 h-3.5" />
-                        オンライン面接形式（カメラON）
-                      </p>
-                      <p className="text-xs text-muted-foreground">本番に近い緊張感で練習できます</p>
-                    </div>
-                    <Badge variant="secondary" className="text-[10px] flex-shrink-0">おすすめ</Badge>
-                  </label>
-                  <label
-                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                      !useCamera ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="cameraMode"
-                      checked={!useCamera}
-                      onChange={() => setUseCamera(false)}
-                      className="mt-0.5"
-                    />
-                    <div>
-                      <p className="text-sm font-medium flex items-center gap-1.5">
-                        <VideoOff className="w-3.5 h-3.5" />
-                        音声のみ（カメラOFF）
-                      </p>
-                      <p className="text-xs text-muted-foreground">カメラなしで音声のみの面接練習</p>
-                    </div>
-                  </label>
-                </div>
+                <label className="text-sm font-medium">カメラ設定</label>
+                <label
+                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    useCamera ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={useCamera}
+                    onChange={(e) => setUseCamera(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <div className="w-10 h-6 rounded-full relative transition-colors flex-shrink-0" style={{ backgroundColor: useCamera ? "hsl(var(--primary))" : "hsl(var(--muted))" }}>
+                    <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${useCamera ? "translate-x-5" : "translate-x-1"}`} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium flex items-center gap-1.5">
+                      {useCamera ? <Video className="w-3.5 h-3.5" /> : <VideoOff className="w-3.5 h-3.5" />}
+                      {useCamera ? "カメラON（オンライン面接形式）" : "カメラOFF"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {useCamera ? "本番に近い緊張感で練習できます" : "カメラなしでチャットのみの面接練習"}
+                    </p>
+                  </div>
+                </label>
               </div>
 
               {/* Start Button */}
@@ -383,7 +333,7 @@ export default function MockInterviewPage() {
                 {isStarting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Mic className="w-4 h-4" />
+                  <MessageSquare className="w-4 h-4" />
                 )}
                 {isStarting ? "面接を準備中..." : "模擬面接を開始する"}
               </Button>
@@ -392,11 +342,11 @@ export default function MockInterviewPage() {
               <div className="space-y-2 text-xs text-muted-foreground">
                 <div className="flex items-start gap-2">
                   <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                  <p>マイクの使用を許可してください</p>
+                  <p>テキストチャット形式で面接を進めます</p>
                 </div>
                 <div className="flex items-start gap-2">
                   <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                  <p>静かな環境での実施をおすすめします</p>
+                  <p>各質問に2分の回答時間があります</p>
                 </div>
                 {remaining !== Infinity && (
                   <p className="text-muted-foreground">
@@ -407,66 +357,6 @@ export default function MockInterviewPage() {
             </CardContent>
           </Card>
         </div>
-
-        {/* Mic Permission Modal */}
-        <AnimatePresence>
-          {showMicModal && (
-            <motion.div
-              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowMicModal(false)}
-            >
-              <motion.div
-                className="bg-background rounded-2xl p-6 max-w-sm w-full shadow-xl"
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="text-center mb-4">
-                  <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
-                    <Mic className="w-7 h-7 text-primary" />
-                  </div>
-                  <h3 className="text-lg font-bold mb-2">マイクの使用を許可してください</h3>
-                  <p className="text-sm text-muted-foreground">
-                    模擬面接では音声認識を使用します。ブラウザからマイクの許可を求められたら「許可」をタップしてください。
-                  </p>
-                </div>
-                <p className="text-xs text-muted-foreground mb-4 text-center">
-                  許可できない場合は、テキスト入力モードで面接を行えます。
-                </p>
-                <div className="space-y-2">
-                  <Button
-                    className="w-full gap-2 min-h-[48px] touch-manipulation"
-                    onClick={async () => {
-                      setShowMicModal(false);
-                      const ok = await checkMicPermission();
-                      await startInterview(ok);
-                    }}
-                    disabled={isStarting}
-                  >
-                    {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
-                    マイクを許可して開始
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="w-full gap-2 min-h-[48px] touch-manipulation"
-                    onClick={async () => {
-                      setShowMicModal(false);
-                      await startInterview(false);
-                    }}
-                    disabled={isStarting}
-                  >
-                    <Keyboard className="w-4 h-4" />
-                    テキスト入力で開始
-                  </Button>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </main>
     </PageTransition>
   );
