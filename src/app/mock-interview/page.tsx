@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
-import { Mic, ArrowLeft, Loader2, FileText, Brain, AlertTriangle, Info } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Mic, ArrowLeft, Loader2, FileText, Brain, AlertTriangle, Info, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +50,7 @@ export default function MockInterviewPage() {
   const [remaining, setRemaining] = useState(1);
   const [hasResumeData, setHasResumeData] = useState(false);
   const [hasDiagnosisData, setHasDiagnosisData] = useState(false);
+  const [showMicModal, setShowMicModal] = useState(false);
 
   useEffect(() => {
     setCanUse(canUseMockInterview());
@@ -64,12 +65,22 @@ export default function MockInterviewPage() {
   const selectedPosition = position === "その他" ? customPosition : position;
   const canStart = selectedIndustry && selectedPosition && !isStarting;
 
-  const handleStart = async () => {
-    if (!canStart) return;
+  // Check mic permission
+  const checkMicPermission = useCallback(async (): Promise<boolean> => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Start interview (called after mic check)
+  const startInterview = useCallback(async () => {
     setIsStarting(true);
 
     try {
-      // 履歴書・診断データを取得
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let resumeData: any = null;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -114,15 +125,33 @@ export default function MockInterviewPage() {
 
       const data = await res.json();
 
-      // セッションデータをlocalStorageに保存
       localStorage.setItem("career-ai-mock-session", JSON.stringify(data));
 
-      router.push(`/mock-interview/session?sessionId=${data.sessionId}`);
+      const url = `/mock-interview/session?sessionId=${data.sessionId}`;
+      router.push(url);
+      // iOS fallback: force navigate if router.push doesn't work
+      setTimeout(() => {
+        if (!window.location.pathname.includes("/session")) {
+          window.location.href = url;
+        }
+      }, 2000);
     } catch (err) {
       alert(err instanceof Error ? err.message : "面接の開始に失敗しました");
     } finally {
       setIsStarting(false);
     }
+  }, [selectedIndustry, selectedPosition, interviewType, questionCount, router]);
+
+  // Handle start button click - check mic first
+  const handleStart = async () => {
+    if (!canStart) return;
+
+    const hasMic = await checkMicPermission();
+    if (!hasMic) {
+      setShowMicModal(true);
+      return;
+    }
+    await startInterview();
   };
 
   // 利用制限に達している場合
@@ -324,6 +353,71 @@ export default function MockInterviewPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Mic Permission Modal */}
+        <AnimatePresence>
+          {showMicModal && (
+            <motion.div
+              className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 px-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMicModal(false)}
+            >
+              <motion.div
+                className="bg-background rounded-2xl p-6 max-w-sm w-full shadow-xl"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="text-center mb-4">
+                  <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                    <Mic className="w-7 h-7 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-bold mb-2">マイクの使用を許可してください</h3>
+                  <p className="text-sm text-muted-foreground">
+                    模擬面接では音声認識を使用します。ブラウザからマイクの許可を求められたら「許可」をタップしてください。
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4 text-center">
+                  許可できない場合は、テキスト入力モードで面接を行えます。
+                </p>
+                <div className="space-y-2">
+                  <Button
+                    className="w-full gap-2 min-h-[48px] touch-manipulation"
+                    onClick={async () => {
+                      setShowMicModal(false);
+                      const ok = await checkMicPermission();
+                      if (ok) {
+                        await startInterview();
+                      } else {
+                        // Start in text mode anyway
+                        await startInterview();
+                      }
+                    }}
+                    disabled={isStarting}
+                  >
+                    {isStarting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
+                    マイクを許可して開始
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2 min-h-[48px] touch-manipulation"
+                    onClick={async () => {
+                      setShowMicModal(false);
+                      await startInterview();
+                    }}
+                    disabled={isStarting}
+                  >
+                    <Keyboard className="w-4 h-4" />
+                    テキスト入力で開始
+                  </Button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </PageTransition>
   );
