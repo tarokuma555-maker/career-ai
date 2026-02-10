@@ -14,18 +14,31 @@ const STEPS = [
   { label: "最適なキャリアパスを生成しています...", delay: Infinity },
 ] as const;
 
+const EXPECTED_SECONDS = 20; // 想定所要時間（秒）
+
 export default function AnalyzingPage() {
   const router = useRouter();
   const [activeStep, setActiveStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [isDone, setIsDone] = useState(false);
   const apiDone = useRef(false);
   const hasFetched = useRef(false);
+
+  // 経過時間カウンター
+  useEffect(() => {
+    if (error || isDone) return;
+    const timer = setInterval(() => setElapsed((prev) => prev + 1), 1000);
+    return () => clearInterval(timer);
+  }, [error, isDone]);
 
   const runAnalysis = useCallback(async () => {
     setError(null);
     setActiveStep(0);
     setCompletedSteps(new Set());
+    setElapsed(0);
+    setIsDone(false);
     apiDone.current = false;
 
     const raw = localStorage.getItem("diagnosisData");
@@ -66,6 +79,7 @@ export default function AnalyzingPage() {
       }
 
       apiDone.current = true;
+      setIsDone(true);
       setCompletedSteps((prev) => new Set(prev).add(2));
 
       localStorage.setItem("analysisResult", JSON.stringify(data));
@@ -179,6 +193,28 @@ export default function AnalyzingPage() {
               );
             })}
           </div>
+
+          {/* 進捗バー */}
+          {!error && (
+            <div className="mb-8">
+              <div className="flex justify-between text-xs text-muted-foreground mb-2">
+                <span>経過時間: {elapsed}秒</span>
+                <span>{isDone ? "完了!" : `目安: 約${EXPECTED_SECONDS}秒`}</span>
+              </div>
+              <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-accent-gradient"
+                  initial={{ width: "0%" }}
+                  animate={{
+                    width: isDone
+                      ? "100%"
+                      : `${Math.min(90, (elapsed / EXPECTED_SECONDS) * 90)}%`,
+                  }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* エラー表示 */}
           <AnimatePresence>
