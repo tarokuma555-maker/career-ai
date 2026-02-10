@@ -4,12 +4,8 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import PageTransition from "@/components/PageTransition";
 import TypingText from "@/components/TypingText";
-import { useLiff } from "@/components/LiffProvider";
-import { LineIcon } from "@/components/LineShareButton";
 
 export default function Home() {
-  const { isLoggedIn, isFriend, login } = useLiff();
-
   return (
     <PageTransition>
       <main className="relative z-10 min-h-screen flex flex-col items-center justify-center px-4">
@@ -26,26 +22,14 @@ export default function Home() {
             className="text-lg sm:text-xl text-muted-foreground block mb-10"
             as="p"
           />
-          {isLoggedIn && isFriend ? (
-            <Link href="/diagnosis">
-              <Button
-                size="lg"
-                className="text-base px-10 py-7 rounded-2xl animate-pulse-glow"
-              >
-                無料でキャリア診断を始める
-              </Button>
-            </Link>
-          ) : (
+          <Link href="/diagnosis">
             <Button
               size="lg"
-              className="text-base px-10 py-7 rounded-2xl animate-pulse-glow gap-2 text-white"
-              style={{ backgroundColor: "#06C755" }}
-              onClick={login}
+              className="text-base px-10 py-7 rounded-2xl animate-pulse-glow"
             >
-              <LineIcon className="w-5 h-5" />
-              LINEで友だち追加して始める
+              無料でキャリア診断を始める
             </Button>
-          )}
+          </Link>
         </div>
       </main>
     </PageTransition>
