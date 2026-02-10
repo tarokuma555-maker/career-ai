@@ -87,34 +87,15 @@ function buildUserMessage(data: DiagnosisData): string {
   const lines = [
     "以下の診断データに基づいてキャリアプランを提案してください。",
     "",
-    "【基本情報】",
+    "【あなたについて】",
     `年齢層: ${data.ageRange}`,
-    `最終学歴: ${data.education}`,
     `就業状況: ${data.employmentStatus}`,
-    "",
-    "【経歴・スキル】",
     `職種: ${data.jobType}${data.jobType === "その他" && data.jobTypeOther ? `（${data.jobTypeOther}）` : ""}`,
-    `業界: ${data.industry}`,
-    `経験年数: ${data.experienceYears}`,
-    `得意なスキル: ${data.skills.join("、")}`,
-  ];
-
-  if (data.certifications) {
-    lines.push(`保有資格: ${data.certifications}`);
-  }
-
-  lines.push(
     "",
-    "【希望・価値観】",
-    `キャリアの悩み: ${data.concerns.join("、")}`,
-    `重視する価値観: ${data.values.join("、")}`,
-  );
-
-  if (data.interests) {
-    lines.push(`興味のある分野: ${data.interests}`);
-  }
-
-  lines.push(`転職の緊急度: ${data.urgency}`);
+    "【これからのこと】",
+    `気になること: ${data.concerns.join("、")}`,
+    `大事にしたいこと: ${data.values.join("、")}`,
+  ];
 
   return lines.join("\n");
 }

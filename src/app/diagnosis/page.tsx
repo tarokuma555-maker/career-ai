@@ -3,11 +3,10 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { User, Briefcase, Heart, Check, ChevronRight, ChevronLeft, Plus, X } from "lucide-react";
+import { User, Heart, Check, ChevronRight, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -21,24 +20,17 @@ import PageTransition from "@/components/PageTransition";
 import {
   step1Schema,
   step2Schema,
-  step3Schema,
   AGE_RANGES,
-  EDUCATION_LEVELS,
   EMPLOYMENT_STATUSES,
   JOB_TYPES,
-  INDUSTRIES,
-  EXPERIENCE_YEARS,
-  SKILL_OPTIONS,
   CAREER_CONCERNS,
   VALUES,
-  URGENCY_OPTIONS,
   type DiagnosisData,
 } from "@/lib/diagnosis-schema";
 
 const STEPS = [
-  { title: "基本情報", icon: User },
-  { title: "経歴・スキル", icon: Briefcase },
-  { title: "希望・価値観", icon: Heart },
+  { title: "あなたについて", icon: User },
+  { title: "これからのこと", icon: Heart },
 ] as const;
 
 const slideVariants = {
@@ -56,38 +48,21 @@ const slideVariants = {
 type FormData = {
   // Step 1
   ageRange: string;
-  education: string;
   employmentStatus: string;
-  // Step 2
   jobType: string;
   jobTypeOther: string;
-  industry: string;
-  experienceYears: string;
-  skills: string[];
-  customSkill: string;
-  certifications: string;
-  // Step 3
+  // Step 2
   concerns: string[];
   values: string[];
-  interests: string;
-  urgency: string;
 };
 
 const initialFormData: FormData = {
   ageRange: "",
-  education: "",
   employmentStatus: "",
   jobType: "",
   jobTypeOther: "",
-  industry: "",
-  experienceYears: "",
-  skills: [],
-  customSkill: "",
-  certifications: "",
   concerns: [],
   values: [],
-  interests: "",
-  urgency: "",
 };
 
 export default function DiagnosisPage() {
@@ -114,7 +89,7 @@ export default function DiagnosisPage() {
   );
 
   const toggleArrayItem = useCallback(
-    (key: "skills" | "concerns" | "values", item: string, maxItems?: number) => {
+    (key: "concerns" | "values", item: string, maxItems?: number) => {
       setFormData((prev) => {
         const current = prev[key];
         if (current.includes(item)) {
@@ -132,44 +107,18 @@ export default function DiagnosisPage() {
     []
   );
 
-  const addCustomSkill = useCallback(() => {
-    const skill = formData.customSkill.trim();
-    if (!skill) return;
-    if (formData.skills.includes(skill)) return;
-    setFormData((prev) => ({
-      ...prev,
-      skills: [...prev.skills, skill],
-      customSkill: "",
-    }));
-    setErrors((prev) => {
-      const next = { ...prev };
-      delete next.skills;
-      return next;
-    });
-  }, [formData.customSkill, formData.skills]);
-
   const validateCurrentStep = (): boolean => {
-    const schemas = [step1Schema, step2Schema, step3Schema];
+    const schemas = [step1Schema, step2Schema];
     const stepDataMap = [
       {
         ageRange: formData.ageRange,
-        education: formData.education,
         employmentStatus: formData.employmentStatus,
-      },
-      {
         jobType: formData.jobType,
         jobTypeOther: formData.jobTypeOther,
-        industry: formData.industry,
-        experienceYears: formData.experienceYears,
-        skills: formData.skills,
-        customSkill: formData.customSkill,
-        certifications: formData.certifications,
       },
       {
         concerns: formData.concerns,
         values: formData.values,
-        interests: formData.interests,
-        urgency: formData.urgency,
       },
     ];
 
@@ -201,19 +150,11 @@ export default function DiagnosisPage() {
     } else {
       const dataToSave: DiagnosisData = {
         ageRange: formData.ageRange,
-        education: formData.education,
         employmentStatus: formData.employmentStatus,
         jobType: formData.jobType,
         jobTypeOther: formData.jobTypeOther,
-        industry: formData.industry,
-        experienceYears: formData.experienceYears,
-        skills: formData.skills,
-        customSkill: formData.customSkill,
-        certifications: formData.certifications,
         concerns: formData.concerns,
         values: formData.values,
-        interests: formData.interests,
-        urgency: formData.urgency,
       };
       localStorage.setItem("diagnosisData", JSON.stringify(dataToSave));
       router.push("/analyzing");
@@ -309,7 +250,7 @@ export default function DiagnosisPage() {
                 exit="exit"
                 transition={{ duration: 0.3, ease: "easeInOut" }}
               >
-                {/* === Step 1: 基本情報 === */}
+                {/* === Step 1: あなたについて === */}
                 {currentStep === 0 && (
                   <div className="space-y-5">
                     <div>
@@ -336,29 +277,7 @@ export default function DiagnosisPage() {
 
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">
-                        最終学歴 <span className="text-destructive">*</span>
-                      </label>
-                      <Select
-                        value={formData.education}
-                        onValueChange={(v) => updateField("education", v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="選択してください" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {EDUCATION_LEVELS.map((v) => (
-                            <SelectItem key={v} value={v}>
-                              {v}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FieldError name="education" />
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        現在の就業状況 <span className="text-destructive">*</span>
+                        現在の状況 <span className="text-destructive">*</span>
                       </label>
                       <Select
                         value={formData.employmentStatus}
@@ -377,16 +296,10 @@ export default function DiagnosisPage() {
                       </Select>
                       <FieldError name="employmentStatus" />
                     </div>
-                  </div>
-                )}
 
-                {/* === Step 2: 経歴・スキル === */}
-                {currentStep === 1 && (
-                  <div className="space-y-5">
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">
-                        現在（または直近）の職種{" "}
-                        <span className="text-destructive">*</span>
+                        職種 <span className="text-destructive">*</span>
                       </label>
                       <Select
                         value={formData.jobType}
@@ -417,144 +330,15 @@ export default function DiagnosisPage() {
                         </div>
                       )}
                     </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        業界 <span className="text-destructive">*</span>
-                      </label>
-                      <Select
-                        value={formData.industry}
-                        onValueChange={(v) => updateField("industry", v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="選択してください" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {INDUSTRIES.map((v) => (
-                            <SelectItem key={v} value={v}>
-                              {v}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FieldError name="industry" />
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        経験年数 <span className="text-destructive">*</span>
-                      </label>
-                      <Select
-                        value={formData.experienceYears}
-                        onValueChange={(v) => updateField("experienceYears", v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="選択してください" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {EXPERIENCE_YEARS.map((v) => (
-                            <SelectItem key={v} value={v}>
-                              {v}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FieldError name="experienceYears" />
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        得意なスキル <span className="text-destructive">*</span>
-                      </label>
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {SKILL_OPTIONS.map((skill) => (
-                          <Badge
-                            key={skill}
-                            role="button"
-                            tabIndex={0}
-                            aria-pressed={formData.skills.includes(skill)}
-                            variant={
-                              formData.skills.includes(skill)
-                                ? "default"
-                                : "outline"
-                            }
-                            className="cursor-pointer select-none transition-colors"
-                            onClick={() => toggleArrayItem("skills", skill)}
-                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleArrayItem("skills", skill); } }}
-                          >
-                            {skill}
-                          </Badge>
-                        ))}
-                        {formData.skills
-                          .filter(
-                            (s) =>
-                              !SKILL_OPTIONS.includes(
-                                s as (typeof SKILL_OPTIONS)[number]
-                              )
-                          )
-                          .map((skill) => (
-                            <Badge
-                              key={skill}
-                              role="button"
-                              tabIndex={0}
-                              variant="default"
-                              className="cursor-pointer select-none gap-1"
-                              onClick={() => toggleArrayItem("skills", skill)}
-                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleArrayItem("skills", skill); } }}
-                            >
-                              {skill}
-                              <X className="w-3 h-3" aria-hidden="true" />
-                            </Badge>
-                          ))}
-                      </div>
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="その他のスキルを追加"
-                          value={formData.customSkill}
-                          onChange={(e) =>
-                            updateField("customSkill", e.target.value)
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              addCustomSkill();
-                            }
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={addCustomSkill}
-                          aria-label="スキルを追加"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                      </div>
-                      <FieldError name="skills" />
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        保有資格（任意）
-                      </label>
-                      <Textarea
-                        placeholder="例: TOEIC 800点、基本情報技術者、簿記2級..."
-                        value={formData.certifications}
-                        onChange={(e) =>
-                          updateField("certifications", e.target.value)
-                        }
-                      />
-                    </div>
                   </div>
                 )}
 
-                {/* === Step 3: 希望・価値観 === */}
-                {currentStep === 2 && (
+                {/* === Step 2: これからのこと === */}
+                {currentStep === 1 && (
                   <div className="space-y-5">
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">
-                        キャリアの悩み（複数選択可）{" "}
+                        気になること（複数選択OK）{" "}
                         <span className="text-destructive">*</span>
                       </label>
                       <div className="flex flex-wrap gap-2">
@@ -582,7 +366,7 @@ export default function DiagnosisPage() {
 
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">
-                        重視する価値観（最大3つ）{" "}
+                        大事にしたいこと（最大3つ）{" "}
                         <span className="text-destructive">*</span>
                       </label>
                       <div className="flex flex-wrap gap-2">
@@ -614,41 +398,6 @@ export default function DiagnosisPage() {
                         </p>
                       )}
                       <FieldError name="values" />
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        興味のある分野（任意）
-                      </label>
-                      <Textarea
-                        placeholder="例: AI・機械学習、Webサービス開発、UXデザイン..."
-                        value={formData.interests}
-                        onChange={(e) =>
-                          updateField("interests", e.target.value)
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-sm font-medium mb-1.5 block">
-                        転職の緊急度 <span className="text-destructive">*</span>
-                      </label>
-                      <Select
-                        value={formData.urgency}
-                        onValueChange={(v) => updateField("urgency", v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="選択してください" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {URGENCY_OPTIONS.map((v) => (
-                            <SelectItem key={v} value={v}>
-                              {v}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FieldError name="urgency" />
                     </div>
                   </div>
                 )}
