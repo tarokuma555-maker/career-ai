@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import { Noto_Sans_JP } from "next/font/google";
 import ParticleBackground from "@/components/ParticleBackground";
+import LiffProvider from "@/components/LiffProvider";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -32,7 +33,9 @@ export default function RootLayout({
         className={`${notoSansJP.variable} ${outfit.variable} font-body antialiased`}
       >
         <ParticleBackground />
-        {children}
+        <LiffProvider>
+          {children}
+        </LiffProvider>
       </body>
     </html>
   );
