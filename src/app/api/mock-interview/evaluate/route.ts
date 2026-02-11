@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import { kv } from "@vercel/kv";
 import type { MockInterviewSession, AnswerEvaluation } from "@/lib/mock-interview-types";
 
@@ -41,7 +41,7 @@ function parseJsonResponse<T>(text: string): T {
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "サーバーの設定に問題があります。" }, { status: 500 });
   }
@@ -62,14 +62,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "パラメータが不足しています。" }, { status: 400 });
   }
 
-  // セッション取得
   const raw = await kv.get<string>(`${KV_PREFIX}${sessionId}`);
   if (!raw) {
     return NextResponse.json({ error: "セッションが見つかりません。" }, { status: 404 });
   }
   const session: MockInterviewSession = typeof raw === "string" ? JSON.parse(raw) : raw;
 
-  // これまでの質疑応答を構築
   const previousQA = session.answers
     .map(a => `Q: ${a.question}\nA: ${a.answer}`)
     .join("\n\n");
@@ -119,18 +117,20 @@ ${previousQA ? `これまでの質疑応答:\n${previousQA}` : ""}
 - 3分以上: 長すぎる（要点がぼやける可能性）`;
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const geminiResult = await model.generateContent(prompt);
-    const text = geminiResult.response.text();
+    const client = new OpenAI({ apiKey });
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 2048,
+      messages: [{ role: "user", content: prompt }],
+    });
 
+    const text = completion.choices[0]?.message?.content;
     if (!text) {
       return NextResponse.json({ error: "AIからの応答が空でした。" }, { status: 502 });
     }
 
     const evaluation = parseJsonResponse<AnswerEvaluation>(text);
 
-    // セッション更新
     session.answers.push({
       questionIndex,
       question,

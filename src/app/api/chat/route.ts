@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 
 // ---------- レート制限（インメモリ / HMR耐性） ----------
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -68,13 +68,10 @@ function buildSystemPrompt(
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return new Response(
-      JSON.stringify({
-        error:
-          "APIキーが設定されていません。",
-      }),
+      JSON.stringify({ error: "APIキーが設定されていません。" }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
@@ -112,7 +109,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // メッセージ構造のバリデーション
   const validRoles = new Set(["user", "assistant"]);
   const validatedMessages = messages.filter(
     (m): m is ChatMessage =>
@@ -128,7 +124,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // メッセージ長の制限（合計 50,000 文字まで）
   const totalLength = validatedMessages.reduce((sum, m) => sum + m.content.length, 0);
   if (totalLength > 50000) {
     return new Response(
@@ -140,42 +135,36 @@ export async function POST(request: NextRequest) {
   const systemPrompt = buildSystemPrompt(diagnosisData, analysisResult);
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: systemPrompt,
+    const client = new OpenAI({ apiKey });
+
+    const stream = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 1024,
+      stream: true,
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...validatedMessages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      ],
     });
-
-    // Gemini用にメッセージ変換 (assistant → model)
-    const geminiContents = validatedMessages.map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
-    }));
-
-    const streamResult = await model.generateContentStream({ contents: geminiContents });
 
     const encoder = new TextEncoder();
 
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of streamResult.stream) {
-            const text = chunk.text();
+          for await (const chunk of stream) {
+            const text = chunk.choices[0]?.delta?.content;
             if (text) {
               const data = JSON.stringify({ text });
-              controller.enqueue(
-                encoder.encode(`data: ${data}\n\n`)
-              );
+              controller.enqueue(encoder.encode(`data: ${data}\n\n`));
             }
           }
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         } catch (err) {
-          console.error("Gemini stream error:", err);
+          console.error("OpenAI stream error:", err);
           const errData = JSON.stringify({ error: "API呼び出しに失敗しました。しばらく後にお試しください。" });
-          controller.enqueue(
-            encoder.encode(`data: ${errData}\n\n`)
-          );
+          controller.enqueue(encoder.encode(`data: ${errData}\n\n`));
           controller.close();
         }
       },
@@ -189,7 +178,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Gemini API error:", error);
+    console.error("OpenAI API error:", error);
     return new Response(
       JSON.stringify({ error: "API呼び出しに失敗しました。しばらく後にお試しください。" }),
       { status: 500, headers: { "Content-Type": "application/json" } }

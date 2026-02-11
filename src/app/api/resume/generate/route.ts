@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import { kv } from "@vercel/kv";
 import type { ResumeFormData, DocumentType, GeneratedResumeData, GeneratedCVData, ResumeStoredData } from "@/lib/resume-types";
 
@@ -67,11 +67,14 @@ ${formData.basicInfo.preferences.position ? `【希望職種】${formData.basicI
 
 JSON形式で出力: { "motivation": "生成した志望動機文" }`;
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-  const result = await model.generateContent(prompt);
-  const text = result.response.text();
+  const client = new OpenAI({ apiKey });
+  const completion = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_tokens: 2048,
+    messages: [{ role: "user", content: prompt }],
+  });
 
+  const text = completion.choices[0]?.message?.content;
   if (!text) {
     return NextResponse.json({ error: "AIからの応答が空でした。" }, { status: 502 });
   }
@@ -157,7 +160,7 @@ async function handleGenerateDocument(
   apiKey: string,
   ip: string
 ): Promise<NextResponse> {
-  const genAI = new GoogleGenerativeAI(apiKey);
+  const client = new OpenAI({ apiKey });
 
   const userInfo = [
     `基本情報: ${formData.basicInfo.lastName} ${formData.basicInfo.firstName}`,
@@ -177,33 +180,36 @@ async function handleGenerateDocument(
   let generatedResume: GeneratedResumeData | undefined;
   let generatedCV: GeneratedCVData | undefined;
 
-  // Generate resume if needed
   if (type === "resume" || type === "both") {
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: RESUME_SYSTEM_PROMPT,
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 4096,
+      messages: [
+        { role: "system", content: RESUME_SYSTEM_PROMPT },
+        { role: "user", content: userInfo },
+      ],
     });
-    const result = await model.generateContent(userInfo);
-    const text = result.response.text();
+    const text = completion.choices[0]?.message?.content;
     if (text) {
       generatedResume = parseJsonResponse<GeneratedResumeData>(text);
     }
   }
 
-  // Generate CV if needed
   if (type === "cv" || type === "both") {
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: CV_SYSTEM_PROMPT,
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 4096,
+      messages: [
+        { role: "system", content: CV_SYSTEM_PROMPT },
+        { role: "user", content: userInfo },
+      ],
     });
-    const result = await model.generateContent(userInfo);
-    const text = result.response.text();
+    const text = completion.choices[0]?.message?.content;
     if (text) {
       generatedCV = parseJsonResponse<GeneratedCVData>(text);
     }
   }
 
-  // Save to Redis
   const now = new Date().toISOString();
   const storedData: ResumeStoredData = {
     type,
@@ -215,7 +221,7 @@ async function handleGenerateDocument(
   };
 
   try {
-    await kv.set(`career-ai:resume:${ip}`, JSON.stringify(storedData), { ex: 7776000 }); // 90 days
+    await kv.set(`career-ai:resume:${ip}`, JSON.stringify(storedData), { ex: 7776000 });
   } catch (err) {
     console.error("KV write error:", err);
   }
@@ -230,7 +236,7 @@ async function handleGenerateDocument(
 
 // ---------- Route Handler ----------
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "サーバーの設定に問題があります。" }, { status: 500 });
   }

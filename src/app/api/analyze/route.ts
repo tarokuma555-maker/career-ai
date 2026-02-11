@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import type { DiagnosisData } from "@/lib/diagnosis-schema";
 import type { AnalysisResult } from "@/lib/types";
 
@@ -102,7 +102,6 @@ function buildUserMessage(data: DiagnosisData): string {
 
 // ---------- JSONパース（フォールバック付き） ----------
 function parseAnalysisResponse(text: string): AnalysisResult {
-  // そのままパースを試行
   try {
     return JSON.parse(text) as AnalysisResult;
   } catch {
@@ -118,7 +117,6 @@ function parseAnalysisResponse(text: string): AnalysisResult {
     }
   }
 
-  // 最初の { から最後の } を抽出
   const braceStart = text.indexOf("{");
   const braceEnd = text.lastIndexOf("}");
   if (braceStart !== -1 && braceEnd > braceStart) {
@@ -134,8 +132,7 @@ function parseAnalysisResponse(text: string): AnalysisResult {
 
 // ---------- ルートハンドラー ----------
 export async function POST(request: NextRequest) {
-  // APIキーチェック
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
       { error: "サーバーの設定に問題があります。管理者にお問い合わせください。" },
@@ -143,7 +140,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // レート制限チェック
   const ip =
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     request.headers.get("x-real-ip") ??
@@ -156,7 +152,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // リクエストボディ取得
   let diagnosisData: DiagnosisData;
   try {
     diagnosisData = await request.json();
@@ -167,17 +162,19 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Gemini API呼び出し
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: SYSTEM_PROMPT,
+    const client = new OpenAI({ apiKey });
+
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 4096,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: buildUserMessage(diagnosisData) },
+      ],
     });
 
-    const geminiResult = await model.generateContent(buildUserMessage(diagnosisData));
-    const text = geminiResult.response.text();
-
+    const text = completion.choices[0]?.message?.content;
     if (!text) {
       return NextResponse.json(
         { error: "AIからの応答が空でした。再度お試しください。" },
@@ -188,7 +185,6 @@ export async function POST(request: NextRequest) {
     const result = parseAnalysisResponse(text);
     return NextResponse.json(result);
   } catch (error) {
-    // JSONパースエラー
     if (error instanceof Error && error.message.includes("パース")) {
       return NextResponse.json(
         { error: "AIの応答を処理できませんでした。再度お試しください。" },
@@ -196,7 +192,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error("Gemini API error:", error);
+    console.error("OpenAI API error:", error);
     return NextResponse.json(
       { error: "API呼び出しに失敗しました。しばらく後にお試しください。" },
       { status: 500 }

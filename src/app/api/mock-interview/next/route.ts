@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import { kv } from "@vercel/kv";
 import type { MockInterviewSession } from "@/lib/mock-interview-types";
 
@@ -34,7 +34,7 @@ function parseJsonResponse<T>(text: string): T {
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "サーバーの設定に問題があります。" }, { status: 500 });
   }
@@ -63,17 +63,14 @@ export async function POST(request: NextRequest) {
 
   const nextIndex = currentQuestionIndex + 1;
 
-  // 最後の質問を超えたら完了
   if (nextIndex >= session.questions.length) {
     return NextResponse.json({ isComplete: true });
   }
 
   const nextPlannedQuestion = session.questions[nextIndex];
 
-  // 前の回答がある場合、深掘り判断
   const lastAnswer = session.answers.find(a => a.questionIndex === currentQuestionIndex);
   if (!lastAnswer) {
-    // 回答がない場合はそのまま次の質問
     return NextResponse.json({
       question: nextPlannedQuestion.question,
       transition: "",
@@ -83,9 +80,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const geminiResult = await model.generateContent(`前の質問: ${lastAnswer.question}
+    const client = new OpenAI({ apiKey });
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 1024,
+      messages: [{
+        role: "user",
+        content: `前の質問: ${lastAnswer.question}
 候補者の回答: ${lastAnswer.answer}
 次に予定している質問: ${nextPlannedQuestion.question}
 
@@ -101,9 +102,11 @@ JSONで出力:
   "useFollowUp": true or false,
   "question": "深掘りする場合の質問テキスト（Aの場合は予定の質問をそのまま）",
   "transition": "なるほど、○○ということですね。では次に..."
-}`);
+}`,
+      }],
+    });
 
-    const text = geminiResult.response.text();
+    const text = completion.choices[0]?.message?.content;
     if (!text) {
       return NextResponse.json({
         question: nextPlannedQuestion.question,
@@ -126,7 +129,6 @@ JSONで出力:
       isComplete: false,
     });
   } catch {
-    // フォールバック: そのまま次の質問
     return NextResponse.json({
       question: nextPlannedQuestion.question,
       transition: "",

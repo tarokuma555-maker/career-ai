@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import type { InterviewQuestion, ReviewData, RichInterviewResult } from "@/lib/types";
 
 // ---------- レート制限（インメモリ / HMR耐性） ----------
@@ -141,7 +141,7 @@ function parseJsonResponse<T>(text: string): T {
 
 // ---------- ルートハンドラー ----------
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
       { error: "APIキーが設定されていません。" },
@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const genAI = new GoogleGenerativeAI(apiKey);
+  const client = new OpenAI({ apiKey });
 
   try {
     if (body.action === "generate") {
@@ -199,14 +199,16 @@ export async function POST(request: NextRequest) {
         .filter(Boolean)
         .join("\n");
 
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
-        systemInstruction: GENERATE_SYSTEM_PROMPT,
+      const completion = await client.chat.completions.create({
+        model: "gpt-4o-mini",
+        max_tokens: 2048,
+        messages: [
+          { role: "system", content: GENERATE_SYSTEM_PROMPT },
+          { role: "user", content: userMessage },
+        ],
       });
 
-      const result = await model.generateContent(userMessage);
-      const text = result.response.text();
-
+      const text = completion.choices[0]?.message?.content;
       if (!text) {
         return NextResponse.json(
           { error: "AIからの応答が空でした。" },
@@ -226,7 +228,6 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 各質問を並列で添削
       const reviewPromises = body.questions.map(async (qa) => {
         const reviewPrompt = buildReviewPrompt(
           qa.question,
@@ -234,14 +235,16 @@ export async function POST(request: NextRequest) {
           body.careerPath ?? ""
         );
 
-        const model = genAI.getGenerativeModel({
-          model: "gemini-2.0-flash",
-          systemInstruction: reviewPrompt,
+        const completion = await client.chat.completions.create({
+          model: "gpt-4o-mini",
+          max_tokens: 4096,
+          messages: [
+            { role: "system", content: reviewPrompt },
+            { role: "user", content: "この回答を添削してください。" },
+          ],
         });
 
-        const result = await model.generateContent("この回答を添削してください。");
-        const text = result.response.text();
-
+        const text = completion.choices[0]?.message?.content;
         if (!text) {
           throw new Error("AIからの応答が空でした。");
         }
@@ -271,7 +274,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error("Gemini API error:", error);
+    console.error("OpenAI API error:", error);
     return NextResponse.json(
       { error: "API呼び出しに失敗しました。しばらく後にお試しください。" },
       { status: 500 }

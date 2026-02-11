@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import { kv } from "@vercel/kv";
 import type { MockInterviewSession, MockInterviewSummary } from "@/lib/mock-interview-types";
 
@@ -41,7 +41,7 @@ function parseJsonResponse<T>(text: string): T {
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "サーバーの設定に問題があります。" }, { status: 500 });
   }
@@ -123,18 +123,20 @@ grade基準:
 - D: 0-59`;
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const geminiResult = await model.generateContent(prompt);
-    const text = geminiResult.response.text();
+    const client = new OpenAI({ apiKey });
+    const completion = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+    });
 
+    const text = completion.choices[0]?.message?.content;
     if (!text) {
       return NextResponse.json({ error: "AIからの応答が空でした。" }, { status: 502 });
     }
 
     const summary = parseJsonResponse<MockInterviewSummary>(text);
 
-    // セッション更新（完了 + TTL延長）
     session.status = "completed";
     session.summary = summary;
     session.completedAt = new Date().toISOString();
