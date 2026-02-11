@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // ---------- レート制限（インメモリ / HMR耐性） ----------
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
@@ -68,12 +68,12 @@ function buildSystemPrompt(
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
   if (!apiKey) {
     return new Response(
       JSON.stringify({
         error:
-          "APIキーが設定されていません。.env.local にANTHROPIC_API_KEYを設定してください。",
+          "APIキーが設定されていません。",
       }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
@@ -137,28 +137,32 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const client = new Anthropic({ apiKey });
   const systemPrompt = buildSystemPrompt(diagnosisData, analysisResult);
 
   try {
-    const stream = client.messages.stream({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages: validatedMessages.map((m) => ({ role: m.role, content: m.content })),
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+      systemInstruction: systemPrompt,
     });
+
+    // Gemini用にメッセージ変換 (assistant → model)
+    const geminiContents = validatedMessages.map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    }));
+
+    const streamResult = await model.generateContentStream({ contents: geminiContents });
 
     const encoder = new TextEncoder();
 
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const event of stream) {
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              const data = JSON.stringify({ text: event.delta.text });
+          for await (const chunk of streamResult.stream) {
+            const text = chunk.text();
+            if (text) {
+              const data = JSON.stringify({ text });
               controller.enqueue(
                 encoder.encode(`data: ${data}\n\n`)
               );
@@ -167,11 +171,8 @@ export async function POST(request: NextRequest) {
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         } catch (err) {
-          const message =
-            err instanceof Anthropic.APIError
-              ? "API呼び出しに失敗しました。しばらく後にお試しください。"
-              : "予期しないエラーが発生しました。";
-          const errData = JSON.stringify({ error: message });
+          console.error("Gemini stream error:", err);
+          const errData = JSON.stringify({ error: "API呼び出しに失敗しました。しばらく後にお試しください。" });
           controller.enqueue(
             encoder.encode(`data: ${errData}\n\n`)
           );
@@ -188,21 +189,9 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    if (error instanceof Anthropic.APIError) {
-      const status = error.status ?? 500;
-      const msg =
-        status === 429
-          ? "APIのレート制限に達しました。しばらく待ってから再度お試しください。"
-          : status === 401
-            ? "APIキーが無効です。正しいAPIキーを設定してください。"
-            : "API呼び出しに失敗しました。しばらく後にお試しください。";
-      return new Response(JSON.stringify({ error: msg }), {
-        status,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    console.error("Gemini API error:", error);
     return new Response(
-      JSON.stringify({ error: "予期しないエラーが発生しました。" }),
+      JSON.stringify({ error: "API呼び出しに失敗しました。しばらく後にお試しください。" }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }

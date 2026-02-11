@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { kv } from "@vercel/kv";
 import { nanoid } from "nanoid";
 import type { MockInterviewSession, MockQuestion, InterviewerProfile } from "@/lib/mock-interview-types";
@@ -43,7 +43,7 @@ function parseJsonResponse<T>(text: string): T {
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "サーバーの設定に問題があります。" }, { status: 500 });
   }
@@ -101,15 +101,12 @@ export async function POST(request: NextRequest) {
 }`;
 
   try {
-    const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const geminiResult = await model.generateContent(prompt);
+    const text = geminiResult.response.text();
 
-    const textBlock = message.content.find(b => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
+    if (!text) {
       return NextResponse.json({ error: "AIからの応答が空でした。" }, { status: 502 });
     }
 
@@ -117,7 +114,7 @@ export async function POST(request: NextRequest) {
       interviewerProfile: InterviewerProfile;
       openingMessage: string;
       questions: MockQuestion[];
-    }>(textBlock.text);
+    }>(text);
 
     const sessionId = nanoid(12);
     const now = new Date().toISOString();
@@ -142,9 +139,6 @@ export async function POST(request: NextRequest) {
       firstQuestion: result.questions[0],
     });
   } catch (error) {
-    if (error instanceof Anthropic.APIError) {
-      return NextResponse.json({ error: "API呼び出しに失敗しました。" }, { status: error.status ?? 500 });
-    }
     console.error("Mock interview start error:", error);
     return NextResponse.json({ error: "予期しないエラーが発生しました。" }, { status: 500 });
   }

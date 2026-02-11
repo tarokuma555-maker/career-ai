@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { kv } from "@vercel/kv";
 import type { MockInterviewSession, AnswerEvaluation } from "@/lib/mock-interview-types";
 
@@ -41,7 +41,7 @@ function parseJsonResponse<T>(text: string): T {
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "サーバーの設定に問題があります。" }, { status: 500 });
   }
@@ -119,19 +119,16 @@ ${previousQA ? `これまでの質疑応答:\n${previousQA}` : ""}
 - 3分以上: 長すぎる（要点がぼやける可能性）`;
 
   try {
-    const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 2048,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const geminiResult = await model.generateContent(prompt);
+    const text = geminiResult.response.text();
 
-    const textBlock = message.content.find(b => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
+    if (!text) {
       return NextResponse.json({ error: "AIからの応答が空でした。" }, { status: 502 });
     }
 
-    const evaluation = parseJsonResponse<AnswerEvaluation>(textBlock.text);
+    const evaluation = parseJsonResponse<AnswerEvaluation>(text);
 
     // セッション更新
     session.answers.push({
@@ -147,9 +144,6 @@ ${previousQA ? `これまでの質疑応答:\n${previousQA}` : ""}
 
     return NextResponse.json(evaluation);
   } catch (error) {
-    if (error instanceof Anthropic.APIError) {
-      return NextResponse.json({ error: "API呼び出しに失敗しました。" }, { status: error.status ?? 500 });
-    }
     console.error("Mock interview evaluate error:", error);
     return NextResponse.json({ error: "予期しないエラーが発生しました。" }, { status: 500 });
   }

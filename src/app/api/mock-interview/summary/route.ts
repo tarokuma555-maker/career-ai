@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { kv } from "@vercel/kv";
 import type { MockInterviewSession, MockInterviewSummary } from "@/lib/mock-interview-types";
 
@@ -41,7 +41,7 @@ function parseJsonResponse<T>(text: string): T {
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "サーバーの設定に問題があります。" }, { status: 500 });
   }
@@ -123,19 +123,16 @@ grade基準:
 - D: 0-59`;
 
   try {
-    const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    });
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const geminiResult = await model.generateContent(prompt);
+    const text = geminiResult.response.text();
 
-    const textBlock = message.content.find(b => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
+    if (!text) {
       return NextResponse.json({ error: "AIからの応答が空でした。" }, { status: 502 });
     }
 
-    const summary = parseJsonResponse<MockInterviewSummary>(textBlock.text);
+    const summary = parseJsonResponse<MockInterviewSummary>(text);
 
     // セッション更新（完了 + TTL延長）
     session.status = "completed";
@@ -146,9 +143,6 @@ grade基準:
 
     return NextResponse.json(summary);
   } catch (error) {
-    if (error instanceof Anthropic.APIError) {
-      return NextResponse.json({ error: "API呼び出しに失敗しました。" }, { status: error.status ?? 500 });
-    }
     console.error("Mock interview summary error:", error);
     return NextResponse.json({ error: "予期しないエラーが発生しました。" }, { status: 500 });
   }

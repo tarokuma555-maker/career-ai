@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { kv } from "@vercel/kv";
 import type { ResumeFormData, DocumentType, GeneratedResumeData, GeneratedCVData, ResumeStoredData } from "@/lib/resume-types";
 
@@ -67,20 +67,17 @@ ${formData.basicInfo.preferences.position ? `【希望職種】${formData.basicI
 
 JSON形式で出力: { "motivation": "生成した志望動機文" }`;
 
-  const client = new Anthropic({ apiKey });
-  const message = await client.messages.create({
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 2048,
-    messages: [{ role: "user", content: prompt }],
-  });
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const result = await model.generateContent(prompt);
+  const text = result.response.text();
 
-  const textBlock = message.content.find(b => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
+  if (!text) {
     return NextResponse.json({ error: "AIからの応答が空でした。" }, { status: 502 });
   }
 
-  const result = parseJsonResponse<Record<string, string>>(textBlock.text);
-  return NextResponse.json(result);
+  const parsed = parseJsonResponse<Record<string, string>>(text);
+  return NextResponse.json(parsed);
 }
 
 // ---------- 履歴書生成 ----------
@@ -156,11 +153,11 @@ async function handleGenerateDocument(
   type: DocumentType,
   formData: ResumeFormData,
   diagnosisData: Record<string, unknown> | null,
-  analysisResult: Record<string, unknown> | null,
+  _analysisResult: Record<string, unknown> | null,
   apiKey: string,
   ip: string
 ): Promise<NextResponse> {
-  const client = new Anthropic({ apiKey });
+  const genAI = new GoogleGenerativeAI(apiKey);
 
   const userInfo = [
     `基本情報: ${formData.basicInfo.lastName} ${formData.basicInfo.firstName}`,
@@ -182,29 +179,27 @@ async function handleGenerateDocument(
 
   // Generate resume if needed
   if (type === "resume" || type === "both") {
-    const msg = await client.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 4096,
-      system: RESUME_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userInfo }],
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+      systemInstruction: RESUME_SYSTEM_PROMPT,
     });
-    const text = msg.content.find(b => b.type === "text");
-    if (text && text.type === "text") {
-      generatedResume = parseJsonResponse<GeneratedResumeData>(text.text);
+    const result = await model.generateContent(userInfo);
+    const text = result.response.text();
+    if (text) {
+      generatedResume = parseJsonResponse<GeneratedResumeData>(text);
     }
   }
 
   // Generate CV if needed
   if (type === "cv" || type === "both") {
-    const msg = await client.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 4096,
-      system: CV_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userInfo }],
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+      systemInstruction: CV_SYSTEM_PROMPT,
     });
-    const text = msg.content.find(b => b.type === "text");
-    if (text && text.type === "text") {
-      generatedCV = parseJsonResponse<GeneratedCVData>(text.text);
+    const result = await model.generateContent(userInfo);
+    const text = result.response.text();
+    if (text) {
+      generatedCV = parseJsonResponse<GeneratedCVData>(text);
     }
   }
 
@@ -235,7 +230,7 @@ async function handleGenerateDocument(
 
 // ---------- Route Handler ----------
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "サーバーの設定に問題があります。" }, { status: 500 });
   }
@@ -260,9 +255,6 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: "不明なアクションです。" }, { status: 400 });
   } catch (error) {
-    if (error instanceof Anthropic.APIError) {
-      return NextResponse.json({ error: "API呼び出しに失敗しました。" }, { status: error.status ?? 500 });
-    }
     console.error("Resume generate error:", error);
     return NextResponse.json({ error: "予期しないエラーが発生しました。" }, { status: 500 });
   }

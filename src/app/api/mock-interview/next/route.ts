@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { kv } from "@vercel/kv";
 import type { MockInterviewSession } from "@/lib/mock-interview-types";
 
@@ -34,7 +34,7 @@ function parseJsonResponse<T>(text: string): T {
 }
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "サーバーの設定に問題があります。" }, { status: 500 });
   }
@@ -83,13 +83,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const client = new Anthropic({ apiKey });
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 1024,
-      messages: [{
-        role: "user",
-        content: `前の質問: ${lastAnswer.question}
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const geminiResult = await model.generateContent(`前の質問: ${lastAnswer.question}
 候補者の回答: ${lastAnswer.answer}
 次に予定している質問: ${nextPlannedQuestion.question}
 
@@ -105,12 +101,10 @@ JSONで出力:
   "useFollowUp": true or false,
   "question": "深掘りする場合の質問テキスト（Aの場合は予定の質問をそのまま）",
   "transition": "なるほど、○○ということですね。では次に..."
-}`,
-      }],
-    });
+}`);
 
-    const textBlock = message.content.find(b => b.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
+    const text = geminiResult.response.text();
+    if (!text) {
       return NextResponse.json({
         question: nextPlannedQuestion.question,
         transition: "",
@@ -123,7 +117,7 @@ JSONで出力:
       useFollowUp: boolean;
       question: string;
       transition: string;
-    }>(textBlock.text);
+    }>(text);
 
     return NextResponse.json({
       question: result.useFollowUp ? result.question : nextPlannedQuestion.question,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { InterviewQuestion, ReviewData, RichInterviewResult } from "@/lib/types";
 
 // ---------- レート制限（インメモリ / HMR耐性） ----------
@@ -141,7 +141,7 @@ function parseJsonResponse<T>(text: string): T {
 
 // ---------- ルートハンドラー ----------
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
       { error: "APIキーが設定されていません。" },
@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const client = new Anthropic({ apiKey });
+  const genAI = new GoogleGenerativeAI(apiKey);
 
   try {
     if (body.action === "generate") {
@@ -199,24 +199,22 @@ export async function POST(request: NextRequest) {
         .filter(Boolean)
         .join("\n");
 
-      const message = await client.messages.create({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 2048,
-        system: GENERATE_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userMessage }],
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.0-flash",
+        systemInstruction: GENERATE_SYSTEM_PROMPT,
       });
 
-      const textBlock = message.content.find((b) => b.type === "text");
-      if (!textBlock || textBlock.type !== "text") {
+      const result = await model.generateContent(userMessage);
+      const text = result.response.text();
+
+      if (!text) {
         return NextResponse.json(
           { error: "AIからの応答が空でした。" },
           { status: 502 }
         );
       }
 
-      const parsed = parseJsonResponse<{ questions: InterviewQuestion[] }>(
-        textBlock.text
-      );
+      const parsed = parseJsonResponse<{ questions: InterviewQuestion[] }>(text);
       return NextResponse.json(parsed);
     }
 
@@ -230,25 +228,25 @@ export async function POST(request: NextRequest) {
 
       // 各質問を並列で添削
       const reviewPromises = body.questions.map(async (qa) => {
-        const prompt = buildReviewPrompt(
+        const reviewPrompt = buildReviewPrompt(
           qa.question,
           qa.answer,
           body.careerPath ?? ""
         );
 
-        const message = await client.messages.create({
-          model: "claude-sonnet-4-5-20250929",
-          max_tokens: 4096,
-          system: prompt,
-          messages: [{ role: "user", content: "この回答を添削してください。" }],
+        const model = genAI.getGenerativeModel({
+          model: "gemini-2.0-flash",
+          systemInstruction: reviewPrompt,
         });
 
-        const textBlock = message.content.find((b) => b.type === "text");
-        if (!textBlock || textBlock.type !== "text") {
+        const result = await model.generateContent("この回答を添削してください。");
+        const text = result.response.text();
+
+        if (!text) {
           throw new Error("AIからの応答が空でした。");
         }
 
-        const reviewData = parseJsonResponse<ReviewData>(textBlock.text);
+        const reviewData = parseJsonResponse<ReviewData>(text);
         return {
           question: qa.question,
           userAnswer: qa.answer,
@@ -266,26 +264,6 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
-    if (error instanceof Anthropic.APIError) {
-      if (error.status === 429) {
-        return NextResponse.json(
-          { error: "APIのレート制限に達しました。しばらく待ってから再度お試しください。" },
-          { status: 429 }
-        );
-      }
-      if (error.status === 401) {
-        return NextResponse.json(
-          { error: "APIキーが無効です。" },
-          { status: 401 }
-        );
-      }
-      console.error("Anthropic API error:", error.message);
-      return NextResponse.json(
-        { error: "API呼び出しに失敗しました。しばらく後にお試しください。" },
-        { status: error.status ?? 500 }
-      );
-    }
-
     if (error instanceof Error && error.message.includes("パース")) {
       return NextResponse.json(
         { error: "AIの応答を処理できませんでした。再度お試しください。" },
@@ -293,8 +271,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.error("Gemini API error:", error);
     return NextResponse.json(
-      { error: "予期しないエラーが発生しました。" },
+      { error: "API呼び出しに失敗しました。しばらく後にお試しください。" },
       { status: 500 }
     );
   }

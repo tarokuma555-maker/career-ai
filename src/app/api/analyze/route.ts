@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { DiagnosisData } from "@/lib/diagnosis-schema";
 import type { AnalysisResult } from "@/lib/types";
 
@@ -135,7 +135,7 @@ function parseAnalysisResponse(text: string): AnalysisResult {
 // ---------- ルートハンドラー ----------
 export async function POST(request: NextRequest) {
   // APIキーチェック
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
       { error: "サーバーの設定に問題があります。管理者にお問い合わせください。" },
@@ -167,54 +167,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Claude API呼び出し
+  // Gemini API呼び出し
   try {
-    const client = new Anthropic({ apiKey });
-
-    const message = await client.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: buildUserMessage(diagnosisData),
-        },
-      ],
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+      systemInstruction: SYSTEM_PROMPT,
     });
 
-    const textBlock = message.content.find((block) => block.type === "text");
-    if (!textBlock || textBlock.type !== "text") {
+    const geminiResult = await model.generateContent(buildUserMessage(diagnosisData));
+    const text = geminiResult.response.text();
+
+    if (!text) {
       return NextResponse.json(
         { error: "AIからの応答が空でした。再度お試しください。" },
         { status: 502 }
       );
     }
 
-    const result = parseAnalysisResponse(textBlock.text);
+    const result = parseAnalysisResponse(text);
     return NextResponse.json(result);
   } catch (error) {
-    // Anthropic SDK エラー
-    if (error instanceof Anthropic.APIError) {
-      if (error.status === 429) {
-        return NextResponse.json(
-          { error: "APIのレート制限に達しました。しばらく待ってから再度お試しください。" },
-          { status: 429 }
-        );
-      }
-      if (error.status === 401) {
-        return NextResponse.json(
-          { error: "APIキーが無効です。正しいAPIキーを設定してください。" },
-          { status: 401 }
-        );
-      }
-      console.error("Anthropic API error:", error.message);
-      return NextResponse.json(
-        { error: "API呼び出しに失敗しました。しばらく後にお試しください。" },
-        { status: error.status ?? 500 }
-      );
-    }
-
     // JSONパースエラー
     if (error instanceof Error && error.message.includes("パース")) {
       return NextResponse.json(
@@ -223,8 +196,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.error("Gemini API error:", error);
     return NextResponse.json(
-      { error: "予期しないエラーが発生しました。" },
+      { error: "API呼び出しに失敗しました。しばらく後にお試しください。" },
       { status: 500 }
     );
   }
