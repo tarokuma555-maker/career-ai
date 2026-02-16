@@ -40,6 +40,8 @@ import {
   MapPin,
   Sheet,
   FileDown,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -176,6 +178,8 @@ export default function AdminResultPage() {
   const [isExportingDocs, setIsExportingDocs] = useState(false);
   const [exportedUrl, setExportedUrl] = useState<{ url: string; type: string } | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [isCopyingUrl, setIsCopyingUrl] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const { getAccessToken } = useGoogleAuth();
 
   // データ取得
@@ -241,6 +245,32 @@ export default function AdminResultPage() {
       setIsGeneratingDetailed(false);
     }
   }, [diagnosisId]);
+
+  // 診断結果URLをコピー
+  const handleCopyResultUrl = useCallback(async () => {
+    if (!stored) return;
+    setIsCopyingUrl(true);
+    try {
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysisResult: stored.analysisResult,
+          diagnosisData: stored.diagnosisData,
+        }),
+      });
+      if (!res.ok) throw new Error("共有リンクの作成に失敗しました");
+      const { shareId } = await res.json();
+      const url = `${window.location.origin}/result/share/${shareId}`;
+      await navigator.clipboard.writeText(url);
+      setCopiedUrl(true);
+      setTimeout(() => setCopiedUrl(false), 3000);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "URLのコピーに失敗しました");
+    } finally {
+      setIsCopyingUrl(false);
+    }
+  }, [stored]);
 
   // エクスポート（Google Drive にアップロード → Google Sheets/Docs で新しいタブで開く）
   const handleExport = useCallback(async (type: "sheets" | "docs") => {
@@ -403,6 +433,25 @@ export default function AdminResultPage() {
     <PageTransition>
       <main className="relative z-10 min-h-screen py-8 px-4">
         <div className="max-w-3xl mx-auto space-y-6">
+          {/* 診断結果URLコピー */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <Button
+              variant={copiedUrl ? "default" : "outline"}
+              className={`w-full gap-2 ${copiedUrl ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
+              onClick={handleCopyResultUrl}
+              disabled={isCopyingUrl}
+            >
+              {isCopyingUrl ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : copiedUrl ? (
+                <Check className="w-4 h-4" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
+              {copiedUrl ? "URLをコピーしました" : "求職者の診断結果URLをコピー"}
+            </Button>
+          </motion.div>
+
           {/* ナビ + エクスポート */}
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between">
             <Link href="/admin" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
