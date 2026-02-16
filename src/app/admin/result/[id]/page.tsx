@@ -38,6 +38,9 @@ import {
   FileText,
   Heart,
   MapPin,
+  Sheet,
+  FileDown,
+  Loader2 as Loader2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -169,6 +172,8 @@ export default function AdminResultPage() {
   const [isGeneratingDetailed, setIsGeneratingDetailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedPlans, setExpandedPlans] = useState<Set<number>>(new Set([0]));
+  const [isExportingSheets, setIsExportingSheets] = useState(false);
+  const [isExportingDocs, setIsExportingDocs] = useState(false);
 
   // データ取得
   useEffect(() => {
@@ -234,6 +239,26 @@ export default function AdminResultPage() {
     }
   }, [diagnosisId]);
 
+  // エクスポート
+  const handleExport = useCallback(async (type: "sheets" | "docs") => {
+    const setLoading = type === "sheets" ? setIsExportingSheets : setIsExportingDocs;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/admin/export/${type}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ diagnosisId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      window.open(data.url, "_blank");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "エクスポートに失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  }, [diagnosisId]);
+
   const togglePlan = (i: number) => {
     setExpandedPlans((prev) => {
       const next = new Set(prev);
@@ -290,12 +315,34 @@ export default function AdminResultPage() {
     <PageTransition>
       <main className="relative z-10 min-h-screen py-8 px-4">
         <div className="max-w-3xl mx-auto space-y-6">
-          {/* ナビ */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          {/* ナビ + エクスポート */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center justify-between">
             <Link href="/admin" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="w-4 h-4" />
               管理画面に戻る
             </Link>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => handleExport("sheets")}
+                disabled={isExportingSheets}
+              >
+                {isExportingSheets ? <Loader2Icon className="w-4 h-4 animate-spin" /> : <Sheet className="w-4 h-4" />}
+                スプレッドシート
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => handleExport("docs")}
+                disabled={isExportingDocs}
+              >
+                {isExportingDocs ? <Loader2Icon className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                ドキュメント
+              </Button>
+            </div>
           </motion.div>
 
           {/* 求職者情報 */}
