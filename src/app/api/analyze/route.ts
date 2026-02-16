@@ -6,6 +6,8 @@ import type { DiagnosisData } from "@/lib/diagnosis-schema";
 import type { AnalysisResult } from "@/lib/types";
 import type { StoredDiagnosis, DiagnosisIndexEntry } from "@/lib/agent-types";
 
+export const maxDuration = 60;
+
 // ---------- レート制限（インメモリ / HMR耐性） ----------
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1分
 const RATE_LIMIT_MAX = 3;
@@ -161,7 +163,7 @@ export async function POST(request: NextRequest) {
 
     const completion = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 4096,
+      max_completion_tokens: 16384,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: buildUserMessage(diagnosisData) },

@@ -4,6 +4,8 @@ import { kv } from "@vercel/kv";
 import type { StoredDiagnosis } from "@/lib/agent-types";
 import type { DetailedLifePlan } from "@/lib/self-analysis-types";
 
+export const maxDuration = 60;
+
 const SYSTEM_PROMPT = `あなたは経験豊富な転職エージェントの分析AIです。
 求職者の診断データ、AI分析結果、および詳細な自己分析アンケートの回答を踏まえて、
 転職エージェントが求職者に提示するための包括的なキャリア・人生プランを作成してください。
@@ -255,7 +257,7 @@ export async function POST(request: NextRequest) {
 
     const completion = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 8192,
+      max_completion_tokens: 16384,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: buildUserMessage(stored) },

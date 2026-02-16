@@ -3,6 +3,8 @@ import OpenAI from "openai";
 import { kv } from "@vercel/kv";
 import type { ResumeFormData, DocumentType, GeneratedResumeData, GeneratedCVData, ResumeStoredData } from "@/lib/resume-types";
 
+export const maxDuration = 60;
+
 // ---------- レート制限 ----------
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 5;
@@ -70,7 +72,7 @@ JSON形式で出力: { "motivation": "生成した志望動機文" }`;
   const client = new OpenAI({ apiKey });
   const completion = await client.chat.completions.create({
     model: "gpt-5-mini",
-    max_completion_tokens: 2048,
+    max_completion_tokens: 8192,
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -183,7 +185,7 @@ async function handleGenerateDocument(
   if (type === "resume" || type === "both") {
     const completion = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 4096,
+      max_completion_tokens: 16384,
       messages: [
         { role: "system", content: RESUME_SYSTEM_PROMPT },
         { role: "user", content: userInfo },
@@ -198,7 +200,7 @@ async function handleGenerateDocument(
   if (type === "cv" || type === "both") {
     const completion = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 4096,
+      max_completion_tokens: 16384,
       messages: [
         { role: "system", content: CV_SYSTEM_PROMPT },
         { role: "user", content: userInfo },

@@ -4,6 +4,8 @@ import { kv } from "@vercel/kv";
 import type { StoredDiagnosis } from "@/lib/agent-types";
 import type { AgentAnalysisResult } from "@/lib/agent-types";
 
+export const maxDuration = 60;
+
 const AGENT_SYSTEM_PROMPT = `あなたは経験豊富な転職エージェントの分析AIです。
 以下の求職者の診断データとAI分析結果を踏まえて、転職エージェントが求職者にアドバイスするための詳細な分析レポートを作成してください。
 
@@ -186,7 +188,7 @@ export async function POST(request: NextRequest) {
 
     const completion = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 8192,
+      max_completion_tokens: 16384,
       messages: [
         { role: "system", content: AGENT_SYSTEM_PROMPT },
         { role: "user", content: buildAgentUserMessage(stored) },

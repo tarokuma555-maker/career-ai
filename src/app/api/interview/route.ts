@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import type { InterviewQuestion, ReviewData, RichInterviewResult } from "@/lib/types";
 
+export const maxDuration = 60;
+
 // ---------- レート制限（インメモリ / HMR耐性） ----------
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 5;
@@ -201,7 +203,7 @@ export async function POST(request: NextRequest) {
 
       const completion = await client.chat.completions.create({
         model: "gpt-5-mini",
-        max_completion_tokens: 2048,
+        max_completion_tokens: 8192,
         messages: [
           { role: "system", content: GENERATE_SYSTEM_PROMPT },
           { role: "user", content: userMessage },
@@ -237,7 +239,7 @@ export async function POST(request: NextRequest) {
 
         const completion = await client.chat.completions.create({
           model: "gpt-5-mini",
-          max_completion_tokens: 4096,
+          max_completion_tokens: 16384,
           messages: [
             { role: "system", content: reviewPrompt },
             { role: "user", content: "この回答を添削してください。" },

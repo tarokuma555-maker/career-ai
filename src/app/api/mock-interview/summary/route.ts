@@ -3,6 +3,8 @@ import OpenAI from "openai";
 import { kv } from "@vercel/kv";
 import type { MockInterviewSession, MockInterviewSummary } from "@/lib/mock-interview-types";
 
+export const maxDuration = 60;
+
 // ---------- レート制限 ----------
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const RATE_LIMIT_MAX = 5;
@@ -126,7 +128,7 @@ grade基準:
     const client = new OpenAI({ apiKey });
     const completion = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 4096,
+      max_completion_tokens: 16384,
       messages: [{ role: "user", content: prompt }],
     });
 
