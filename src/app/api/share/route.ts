@@ -36,6 +36,7 @@ function isRateLimited(ip: string): boolean {
 interface ShareData {
   analysisResult: AnalysisResult;
   diagnosisData?: Record<string, unknown>;
+  diagnosisId?: string;
   createdAt: number;
 }
 
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { analysisResult?: AnalysisResult; diagnosisData?: Record<string, unknown> };
+  let body: { analysisResult?: AnalysisResult; diagnosisData?: Record<string, unknown>; diagnosisId?: string };
   try {
     body = await request.json();
   } catch {
@@ -83,6 +84,7 @@ export async function POST(request: NextRequest) {
   const data: ShareData = {
     analysisResult: body.analysisResult,
     diagnosisData: body.diagnosisData,
+    diagnosisId: body.diagnosisId,
     createdAt: Date.now(),
   };
 
@@ -126,6 +128,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       analysisResult: data.analysisResult,
       diagnosisData: data.diagnosisData,
+      diagnosisId: data.diagnosisId,
     });
   } catch (err) {
     console.error("KV read error:", err);

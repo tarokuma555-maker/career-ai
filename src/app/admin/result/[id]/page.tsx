@@ -257,6 +257,7 @@ export default function AdminResultPage() {
         body: JSON.stringify({
           analysisResult: stored.analysisResult,
           diagnosisData: stored.diagnosisData,
+          diagnosisId,
         }),
       });
       if (!res.ok) throw new Error("共有リンクの作成に失敗しました");
