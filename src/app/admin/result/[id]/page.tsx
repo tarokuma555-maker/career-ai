@@ -40,7 +40,6 @@ import {
   MapPin,
   Sheet,
   FileDown,
-  Loader2 as Loader2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -329,7 +328,7 @@ export default function AdminResultPage() {
                 onClick={() => handleExport("sheets")}
                 disabled={isExportingSheets}
               >
-                {isExportingSheets ? <Loader2Icon className="w-4 h-4 animate-spin" /> : <Sheet className="w-4 h-4" />}
+                {isExportingSheets ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sheet className="w-4 h-4" />}
                 スプレッドシート
               </Button>
               <Button
@@ -339,7 +338,7 @@ export default function AdminResultPage() {
                 onClick={() => handleExport("docs")}
                 disabled={isExportingDocs}
               >
-                {isExportingDocs ? <Loader2Icon className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                {isExportingDocs ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
                 ドキュメント
               </Button>
             </div>
