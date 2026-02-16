@@ -180,7 +180,38 @@ export default function AdminResultPage() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [isCopyingUrl, setIsCopyingUrl] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [isExportingResume, setIsExportingResume] = useState(false);
+  const [showResumeModal, setShowResumeModal] = useState(false);
+  const [resumeForm, setResumeForm] = useState({
+    name: "",
+    date: "",
+    workHistory: [{
+      companyName: "", periodFrom: "", periodTo: "現在",
+      employmentType: "正社員", businessDescription: "",
+      capital: "", revenue: "", employees: "", listing: "未上場",
+      department: "", deptPeriodFrom: "", deptPeriodTo: "現在",
+      duties: "", products: "", clients: "", salesStyle: "",
+      achievements: "", projects: "",
+    }],
+    pcSkills: { word: "", excel: "", powerpoint: "", other: "" },
+    qualifications: [{ name: "", date: "" }],
+    selfPRMode: "ai" as "ai" | "manual",
+    selfPRManual: "",
+    summaryMode: "ai" as "ai" | "manual",
+    summaryManual: "",
+  });
   const { getAccessToken } = useGoogleAuth();
+
+  // モーダル初期化
+  useEffect(() => {
+    if (showResumeModal && stored) {
+      setResumeForm(prev => ({
+        ...prev,
+        name: stored.diagnosisData.name || "",
+        date: new Date().toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric" }),
+      }));
+    }
+  }, [showResumeModal, stored]);
 
   // データ取得
   useEffect(() => {
@@ -272,6 +303,87 @@ export default function AdminResultPage() {
       setIsCopyingUrl(false);
     }
   }, [stored]);
+
+  // 職務経歴書エクスポート
+  const handleExportResume = useCallback(async () => {
+    setIsExportingResume(true);
+    setExportedUrl(null);
+    setExportError(null);
+
+    try {
+      const res = await fetch("/api/admin/export/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          diagnosisId,
+          name: resumeForm.name,
+          date: resumeForm.date,
+          workHistory: resumeForm.workHistory,
+          pcSkills: resumeForm.pcSkills,
+          qualifications: resumeForm.qualifications.filter(q => q.name),
+          selfPR: { mode: resumeForm.selfPRMode, manualContent: resumeForm.selfPRManual },
+          summary: { mode: resumeForm.summaryMode, manualContent: resumeForm.summaryManual },
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error);
+      }
+      const blob = await res.blob();
+
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const nameMatch = disposition.match(/filename\*=UTF-8''(.+)/);
+      const rawName = nameMatch ? decodeURIComponent(nameMatch[1]) : "職務経歴書.docx";
+      const displayName = rawName.replace(/\.docx$/, "");
+
+      let token: string | null = null;
+      try {
+        token = await getAccessToken();
+      } catch {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = rawName;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+        setExportedUrl({ url: "", type: "職務経歴書（ダウンロード済み）" });
+        setShowResumeModal(false);
+        return;
+      }
+
+      const boundary = "---career_ai_resume_" + Date.now();
+      const metadata = JSON.stringify({ name: displayName, mimeType: "application/vnd.google-apps.document" });
+      const body = new Blob([
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+        metadata,
+        `\r\n--${boundary}\r\nContent-Type: ${blob.type}\r\n\r\n`,
+        blob,
+        `\r\n--${boundary}--`,
+      ]);
+
+      const uploadRes = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+          body,
+        },
+      );
+
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json();
+        throw new Error(errData.error?.message || "Google Driveへのアップロードに失敗しました");
+      }
+
+      const file = await uploadRes.json();
+      setExportedUrl({ url: `https://docs.google.com/document/d/${file.id}/edit`, type: "Google ドキュメント（職務経歴書）" });
+      setShowResumeModal(false);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "職務経歴書の作成に失敗しました");
+    } finally {
+      setIsExportingResume(false);
+    }
+  }, [diagnosisId, resumeForm, getAccessToken]);
 
   // エクスポート（Google Drive にアップロード → Google Sheets/Docs で新しいタブで開く）
   const handleExport = useCallback(async (type: "sheets" | "docs") => {
@@ -479,6 +591,15 @@ export default function AdminResultPage() {
               >
                 {isExportingDocs ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
                 ドキュメント
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setShowResumeModal(true)}
+              >
+                <ClipboardList className="w-4 h-4" />
+                職務経歴書
               </Button>
             </div>
           </motion.div>
@@ -1559,6 +1680,228 @@ export default function AdminResultPage() {
           </div>
         </div>
       </main>
+
+      {/* 職務経歴書モーダル */}
+      {showResumeModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-start justify-center overflow-y-auto p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl my-8">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <ClipboardList className="w-5 h-5" />
+                職務経歴書の作成
+              </h2>
+              <button onClick={() => setShowResumeModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+
+            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              {/* 基本情報 */}
+              <div>
+                <h3 className="font-bold text-sm text-gray-500 mb-3">基本情報</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-gray-500">氏名</label>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm" value={resumeForm.name}
+                      onChange={e => setResumeForm(prev => ({ ...prev, name: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500">日付</label>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm" value={resumeForm.date}
+                      onChange={e => setResumeForm(prev => ({ ...prev, date: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+
+              {/* 職務経歴 */}
+              {resumeForm.workHistory.map((work, wi) => (
+                <div key={wi} className="border rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-sm text-gray-500">職務経歴（{wi + 1}社目）</h3>
+                    {resumeForm.workHistory.length > 1 && (
+                      <button className="text-xs text-red-500" onClick={() => setResumeForm(prev => ({ ...prev, workHistory: prev.workHistory.filter((_, i) => i !== wi) }))}>削除</button>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-gray-500">会社名</label>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="株式会社○○○" value={work.companyName}
+                      onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], companyName: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-500">入社年月</label>
+                      <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="20xx年xx月" value={work.periodFrom}
+                        onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], periodFrom: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">退社年月</label>
+                      <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="現在" value={work.periodTo}
+                        onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], periodTo: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-500">雇用形態</label>
+                      <select className="w-full border rounded-lg px-3 py-2 text-sm" value={work.employmentType}
+                        onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], employmentType: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }}>
+                        <option>正社員</option><option>契約社員</option><option>派遣社員</option><option>アルバイト</option><option>業務委託</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">上場区分</label>
+                      <select className="w-full border rounded-lg px-3 py-2 text-sm" value={work.listing}
+                        onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], listing: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }}>
+                        <option>未上場</option><option>東証プライム</option><option>東証スタンダード</option><option>東証グロース</option><option>その他</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-gray-500">事業内容</label>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="ハードウェア開発、アプリ開発..." value={work.businessDescription}
+                      onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], businessDescription: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }} />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-xs text-gray-500">資本金</label>
+                      <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="1億5千万円" value={work.capital}
+                        onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], capital: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">売上高</label>
+                      <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="3億2千万円" value={work.revenue}
+                        onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], revenue: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">従業員数</label>
+                      <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="150人" value={work.employees}
+                        onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], employees: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-gray-500">配属部署</label>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="本社 / 営業部" value={work.department}
+                      onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], department: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }} />
+                  </div>
+
+                  {([
+                    ["duties", "業務内容", "中小企業に対するハードウェア販売や..."],
+                    ["products", "取扱商品", "OA機器、ログ管理ソフト..."],
+                    ["clients", "取引顧客", "従業員数xx人～xxx人以下の中小企業..."],
+                    ["salesStyle", "営業スタイル", "新規（xx％）：電話、訪問営業..."],
+                    ["achievements", "主な実績", "20xx年度 予算達成率xxx％..."],
+                    ["projects", "主なプロジェクト", "1. ネットワーク環境の見直し..."],
+                  ] as [string, string, string][]).map(([field, label, placeholder]) => (
+                    <div key={field}>
+                      <label className="text-xs text-gray-500">{label}</label>
+                      <textarea className="w-full border rounded-lg px-3 py-2 text-sm min-h-[80px] resize-y" placeholder={placeholder}
+                        value={(work as Record<string, string>)[field] || ""}
+                        onChange={e => { const h = [...resumeForm.workHistory]; h[wi] = { ...h[wi], [field]: e.target.value }; setResumeForm(prev => ({ ...prev, workHistory: h })); }} />
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              <button className="w-full py-2 border-2 border-dashed border-gray-300 rounded-xl text-sm text-gray-500 hover:border-gray-400"
+                onClick={() => setResumeForm(prev => ({
+                  ...prev,
+                  workHistory: [...prev.workHistory, {
+                    companyName: "", periodFrom: "", periodTo: "", employmentType: "正社員", businessDescription: "",
+                    capital: "", revenue: "", employees: "", listing: "未上場",
+                    department: "", deptPeriodFrom: "", deptPeriodTo: "",
+                    duties: "", products: "", clients: "", salesStyle: "", achievements: "", projects: "",
+                  }],
+                }))}>
+                ＋ 職歴を追加する
+              </button>
+
+              {/* PCスキル */}
+              <div>
+                <h3 className="font-bold text-sm text-gray-500 mb-3">PCスキル</h3>
+                {(["word", "excel", "powerpoint"] as const).map(key => (
+                  <div key={key} className="mb-2">
+                    <label className="text-xs text-gray-500">{key.charAt(0).toUpperCase() + key.slice(1)}</label>
+                    <input className="w-full border rounded-lg px-3 py-2 text-sm"
+                      placeholder={key === "word" ? "報告書等の社内外文書が作成できるレベル" : ""}
+                      value={resumeForm.pcSkills[key]}
+                      onChange={e => setResumeForm(prev => ({ ...prev, pcSkills: { ...prev.pcSkills, [key]: e.target.value } }))} />
+                  </div>
+                ))}
+              </div>
+
+              {/* 資格 */}
+              <div>
+                <h3 className="font-bold text-sm text-gray-500 mb-3">資格</h3>
+                {resumeForm.qualifications.map((q, qi) => (
+                  <div key={qi} className="grid grid-cols-[1fr_auto_auto] gap-2 mb-2">
+                    <input className="border rounded-lg px-3 py-2 text-sm" placeholder="普通自動車免許" value={q.name}
+                      onChange={e => { const qs = [...resumeForm.qualifications]; qs[qi] = { ...qs[qi], name: e.target.value }; setResumeForm(prev => ({ ...prev, qualifications: qs })); }} />
+                    <input className="border rounded-lg px-3 py-2 text-sm w-[140px]" placeholder="20xx年xx月取得" value={q.date}
+                      onChange={e => { const qs = [...resumeForm.qualifications]; qs[qi] = { ...qs[qi], date: e.target.value }; setResumeForm(prev => ({ ...prev, qualifications: qs })); }} />
+                    {resumeForm.qualifications.length > 1 && (
+                      <button className="text-red-400 text-xs px-2" onClick={() => setResumeForm(prev => ({ ...prev, qualifications: prev.qualifications.filter((_, i) => i !== qi) }))}>✕</button>
+                    )}
+                  </div>
+                ))}
+                <button className="text-sm text-blue-500" onClick={() => setResumeForm(prev => ({ ...prev, qualifications: [...prev.qualifications, { name: "", date: "" }] }))}>
+                  ＋ 資格を追加
+                </button>
+              </div>
+
+              {/* 職務要約 */}
+              <div>
+                <h3 className="font-bold text-sm text-gray-500 mb-3">職務要約</h3>
+                <div className="flex gap-3 mb-2">
+                  <label className="flex items-center gap-1.5 text-sm">
+                    <input type="radio" checked={resumeForm.summaryMode === "ai"} onChange={() => setResumeForm(prev => ({ ...prev, summaryMode: "ai" }))} />
+                    自動生成（おすすめ）
+                  </label>
+                  <label className="flex items-center gap-1.5 text-sm">
+                    <input type="radio" checked={resumeForm.summaryMode === "manual"} onChange={() => setResumeForm(prev => ({ ...prev, summaryMode: "manual" }))} />
+                    自分で入力
+                  </label>
+                </div>
+                {resumeForm.summaryMode === "manual" && (
+                  <textarea className="w-full border rounded-lg px-3 py-2 text-sm min-h-[100px]" placeholder="職務要約を入力..."
+                    value={resumeForm.summaryManual} onChange={e => setResumeForm(prev => ({ ...prev, summaryManual: e.target.value }))} />
+                )}
+                {resumeForm.summaryMode === "ai" && <p className="text-xs text-gray-400">職歴情報を元に自動生成します</p>}
+              </div>
+
+              {/* 自己PR */}
+              <div>
+                <h3 className="font-bold text-sm text-gray-500 mb-3">自己PR</h3>
+                <div className="flex gap-3 mb-2">
+                  <label className="flex items-center gap-1.5 text-sm">
+                    <input type="radio" checked={resumeForm.selfPRMode === "ai"} onChange={() => setResumeForm(prev => ({ ...prev, selfPRMode: "ai" }))} />
+                    診断結果から自動生成（おすすめ）
+                  </label>
+                  <label className="flex items-center gap-1.5 text-sm">
+                    <input type="radio" checked={resumeForm.selfPRMode === "manual"} onChange={() => setResumeForm(prev => ({ ...prev, selfPRMode: "manual" }))} />
+                    自分で入力
+                  </label>
+                </div>
+                {resumeForm.selfPRMode === "manual" && (
+                  <textarea className="w-full border rounded-lg px-3 py-2 text-sm min-h-[150px]" placeholder="自己PRを入力..."
+                    value={resumeForm.selfPRManual} onChange={e => setResumeForm(prev => ({ ...prev, selfPRManual: e.target.value }))} />
+                )}
+                {resumeForm.selfPRMode === "ai" && <p className="text-xs text-gray-400">診断結果の強み・スキル・パーソナリティから自動生成します</p>}
+              </div>
+            </div>
+
+            <div className="p-6 border-t flex justify-end gap-3">
+              <Button variant="outline" onClick={() => setShowResumeModal(false)}>キャンセル</Button>
+              <Button className="gap-1.5" onClick={handleExportResume} disabled={isExportingResume}>
+                {isExportingResume ? <Loader2 className="w-4 h-4 animate-spin" /> : <ClipboardList className="w-4 h-4" />}
+                {isExportingResume ? "生成中..." : "職務経歴書を生成する"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageTransition>
   );
 }
