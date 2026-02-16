@@ -14,7 +14,6 @@ const BLUE = "FF4472C4";
 const LIGHT_BLUE = "FFD6E4F0";
 const LIGHTER_BLUE = "FFEBF1FA";
 const WHITE = "FFFFFFFF";
-const GRAY = "FFE0E0E0";
 const BORDER_COLOR = "FFB0B0B0";
 
 const thinBorder: Partial<ExcelJS.Borders> = {
