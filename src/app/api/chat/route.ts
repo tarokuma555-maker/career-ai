@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     const stream = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_tokens: 1024,
+      max_completion_tokens: 1024,
       stream: true,
       messages: [
         { role: "system", content: systemPrompt },

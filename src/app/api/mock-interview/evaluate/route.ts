@@ -120,7 +120,7 @@ ${previousQA ? `これまでの質疑応答:\n${previousQA}` : ""}
     const client = new OpenAI({ apiKey });
     const completion = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_tokens: 2048,
+      max_completion_tokens: 2048,
       messages: [{ role: "user", content: prompt }],
     });
 

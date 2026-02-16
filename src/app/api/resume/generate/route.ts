@@ -70,7 +70,7 @@ JSON形式で出力: { "motivation": "生成した志望動機文" }`;
   const client = new OpenAI({ apiKey });
   const completion = await client.chat.completions.create({
     model: "gpt-5-mini",
-    max_tokens: 2048,
+    max_completion_tokens: 2048,
     messages: [{ role: "user", content: prompt }],
   });
 
@@ -183,7 +183,7 @@ async function handleGenerateDocument(
   if (type === "resume" || type === "both") {
     const completion = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
       messages: [
         { role: "system", content: RESUME_SYSTEM_PROMPT },
         { role: "user", content: userInfo },
@@ -198,7 +198,7 @@ async function handleGenerateDocument(
   if (type === "cv" || type === "both") {
     const completion = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
       messages: [
         { role: "system", content: CV_SYSTEM_PROMPT },
         { role: "user", content: userInfo },

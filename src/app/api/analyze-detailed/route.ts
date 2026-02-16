@@ -255,7 +255,7 @@ export async function POST(request: NextRequest) {
 
     const completion = await client.chat.completions.create({
       model: "gpt-5-mini",
-      max_tokens: 8192,
+      max_completion_tokens: 8192,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: buildUserMessage(stored) },
