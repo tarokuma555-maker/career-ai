@@ -107,7 +107,23 @@ export function useGoogleAuth() {
         );
         return;
       }
-      pendingRef.current = { resolve, reject };
+
+      // モバイルではポップアップがブロックされることがあるため、タイムアウトを設定
+      const timeout = setTimeout(() => {
+        pendingRef.current = null;
+        reject(new Error("GOOGLE_AUTH_TIMEOUT"));
+      }, 10_000);
+
+      pendingRef.current = {
+        resolve: (token) => {
+          clearTimeout(timeout);
+          resolve(token);
+        },
+        reject: (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        },
+      };
       clientRef.current.requestAccessToken();
     });
   }, []);

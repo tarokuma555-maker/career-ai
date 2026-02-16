@@ -175,6 +175,7 @@ export default function AdminResultPage() {
   const [isExportingSheets, setIsExportingSheets] = useState(false);
   const [isExportingDocs, setIsExportingDocs] = useState(false);
   const [exportedUrl, setExportedUrl] = useState<{ url: string; type: string } | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const { getAccessToken } = useGoogleAuth();
 
   // データ取得
@@ -246,12 +247,10 @@ export default function AdminResultPage() {
     const setLoading = type === "sheets" ? setIsExportingSheets : setIsExportingDocs;
     setLoading(true);
     setExportedUrl(null);
+    setExportError(null);
 
     try {
-      // 1. Google 認証（初回はポップアップ表示）
-      const token = await getAccessToken();
-
-      // 2. サーバーで .xlsx/.docx を生成
+      // 1. サーバーで .xlsx/.docx を生成
       const res = await fetch(`/api/admin/export/${type}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -263,13 +262,32 @@ export default function AdminResultPage() {
       }
       const blob = await res.blob();
 
-      // 3. ファイル名を取得
+      // 2. ファイル名を取得
       const disposition = res.headers.get("Content-Disposition") || "";
       const nameMatch = disposition.match(/filename\*=UTF-8''(.+)/);
       const rawName = nameMatch
         ? decodeURIComponent(nameMatch[1])
         : `export.${type === "sheets" ? "xlsx" : "docx"}`;
       const displayName = rawName.replace(/\.(xlsx|docx)$/, "");
+
+      // 3. Google 認証を試みる（失敗した場合は直接ダウンロード）
+      let token: string | null = null;
+      try {
+        token = await getAccessToken();
+      } catch {
+        // 認証失敗（モバイルでポップアップブロック等）→ 直接ダウンロード
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = rawName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        const label = type === "sheets" ? "スプレッドシート" : "ドキュメント";
+        setExportedUrl({ url: "", type: `${label}（ダウンロード済み）` });
+        return;
+      }
 
       // 4. Google Drive にアップロード（Google 形式に自動変換）
       const googleMimeType =
@@ -323,7 +341,7 @@ export default function AdminResultPage() {
       // URL をステートに保存して画面にリンクを表示
       setExportedUrl({ url: fileUrl, type: label });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "エクスポートに失敗しました");
+      setExportError(err instanceof Error ? err.message : "エクスポートに失敗しました");
     } finally {
       setLoading(false);
     }
@@ -415,6 +433,24 @@ export default function AdminResultPage() {
             </div>
           </motion.div>
 
+          {/* エクスポートエラー */}
+          {exportError && (
+            <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-red-800">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{exportError}</span>
+                </div>
+                <button
+                  onClick={() => setExportError(null)}
+                  className="text-red-600 hover:text-red-800 text-xs"
+                >
+                  閉じる
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           {/* エクスポート成功リンク */}
           {exportedUrl && (
             <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}>
@@ -424,22 +460,24 @@ export default function AdminResultPage() {
                   <span>{exportedUrl.type}を作成しました</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const a = document.createElement("a");
-                      a.href = exportedUrl.url;
-                      a.target = "_blank";
-                      a.rel = "noopener noreferrer";
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 transition-colors"
-                  >
-                    開く
-                    <ArrowLeft className="w-3.5 h-3.5 rotate-[135deg]" />
-                  </button>
+                  {exportedUrl.url && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const a = document.createElement("a");
+                        a.href = exportedUrl.url;
+                        a.target = "_blank";
+                        a.rel = "noopener noreferrer";
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+                    >
+                      開く
+                      <ArrowLeft className="w-3.5 h-3.5 rotate-[135deg]" />
+                    </button>
+                  )}
                   <button
                     onClick={() => setExportedUrl(null)}
                     className="text-green-600 hover:text-green-800 text-xs"
