@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
         .join("\n");
 
       const completion = await client.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-5-mini",
         max_tokens: 2048,
         messages: [
           { role: "system", content: GENERATE_SYSTEM_PROMPT },
@@ -236,7 +236,7 @@ export async function POST(request: NextRequest) {
         );
 
         const completion = await client.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: "gpt-5-mini",
           max_tokens: 4096,
           messages: [
             { role: "system", content: reviewPrompt },

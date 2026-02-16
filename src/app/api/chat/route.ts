@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
     const client = new OpenAI({ apiKey });
 
     const stream = await client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-5-mini",
       max_tokens: 1024,
       stream: true,
       messages: [

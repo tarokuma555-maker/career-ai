@@ -125,7 +125,7 @@ grade基準:
   try {
     const client = new OpenAI({ apiKey });
     const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-5-mini",
       max_tokens: 4096,
       messages: [{ role: "user", content: prompt }],
     });
