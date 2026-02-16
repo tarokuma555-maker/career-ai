@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { AnalysisResult } from "@/lib/types";
 import PageTransition from "@/components/PageTransition";
 import { LineIcon } from "@/components/LineShareButton";
-import { openLineShare, type ShareUrls } from "@/lib/lineShare";
+import { openLineShare } from "@/lib/lineShare";
 
 export default function ResultPage() {
   const router = useRouter();
@@ -17,7 +17,6 @@ export default function ResultPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [diag, setDiag] = useState<Record<string, any> | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const shareUrlCacheRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -35,33 +34,18 @@ export default function ResultPage() {
     } catch { /* ignore */ }
   }, [router]);
 
-  const getOrCreateShareUrl = useCallback(async (): Promise<ShareUrls> => {
-    let url = shareUrlCacheRef.current;
-    if (!url) url = localStorage.getItem("career-ai-share-url") ?? null;
-    if (!url && result) {
-      const res = await fetch("/api/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ analysisResult: result, diagnosisData: diag ?? undefined }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "共有リンクの作成に失敗しました。");
-      url = `${window.location.origin}/result/share/${data.shareId}`;
-      localStorage.setItem("career-ai-share-url", url);
-    }
-    if (url) shareUrlCacheRef.current = url;
-    return { resultShareUrl: url ?? undefined };
-  }, [result, diag]);
-
   const handleLineCTA = useCallback(async () => {
     try {
-      const urls = await getOrCreateShareUrl();
-      const toast = await openLineShare("result", urls);
+      const diagnosisId = localStorage.getItem("diagnosisId");
+      const adminUrl = diagnosisId
+        ? `${window.location.origin}/admin/result/${diagnosisId}`
+        : undefined;
+      const toast = await openLineShare("result", { resultShareUrl: adminUrl });
       setToastMessage(toast);
     } catch (err) {
       setToastMessage(err instanceof Error ? err.message : "共有に失敗しました");
     }
-  }, [getOrCreateShareUrl]);
+  }, []);
 
   // ローディング
   if (!result) {
