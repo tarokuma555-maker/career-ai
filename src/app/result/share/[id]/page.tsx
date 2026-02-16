@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { RotateCcw, ExternalLink, Briefcase, DollarSign, ClipboardList, LinkIcon } from "lucide-react";
+import { ExternalLink, Briefcase, DollarSign, ClipboardList, LinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import PageTransition from "@/components/PageTransition";
@@ -198,13 +198,6 @@ export default function SharedResultPage() {
             </motion.div>
           )}
 
-          {/* もう一度やってみる */}
-          <motion.div className="text-center pb-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}>
-            <Link href="/diagnosis" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-              <RotateCcw className="w-3.5 h-3.5" />
-              もう一度やってみる
-            </Link>
-          </motion.div>
         </div>
 
         {/* Toast */}
