@@ -536,7 +536,7 @@ function MockInterviewSession() {
       <main className="h-[100dvh] flex flex-col bg-[#111827] text-white pb-[env(safe-area-inset-bottom)]">
         <div className="flex-1 flex flex-col items-center justify-center px-6 space-y-5">
           <Target className="w-10 h-10 text-indigo-400" />
-          <h1 className="text-xl font-bold">AI模擬面接</h1>
+          <h1 className="text-xl font-bold">模擬面接</h1>
 
           {/* Camera preview */}
           <div className="w-full max-w-[280px] aspect-[4/3] bg-gray-800 rounded-xl overflow-hidden relative">
@@ -608,7 +608,7 @@ function MockInterviewSession() {
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-sm font-bold">AI模擬面接</span>
+            <span className="text-sm font-bold">模擬面接</span>
           </div>
           <div className="flex items-center gap-3">
             <Badge variant="outline" className="gap-1 text-gray-300 border-gray-600 text-xs">

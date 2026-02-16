@@ -117,7 +117,7 @@ export default function ProfileSharePage() {
               {hasBasicInfo ? `${data.basicInfo!.lastName} ${data.basicInfo!.firstName}` : "プロフィール"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Career AI で作成されたプロフィール情報
+              Career Planning で作成されたプロフィール情報
             </p>
           </motion.div>
 

@@ -82,7 +82,7 @@ export default function ResultPage() {
             <h1 className="text-2xl font-bold font-heading mb-1 bg-accent-gradient bg-clip-text text-transparent">
               診断結果
             </h1>
-            <p className="text-sm text-muted-foreground">AIがあなたの情報をもとに分析しました</p>
+            <p className="text-sm text-muted-foreground">あなたの情報をもとに分析しました</p>
           </motion.div>
 
           {/* メインカード: 職種と平均年収 */}

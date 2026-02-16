@@ -40,7 +40,7 @@ export default function ResumeTypePage() {
                 <Lightbulb className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="text-sm font-medium mb-1">
-                    先にキャリア診断を受けると、AIがより精度の高い自己PRを生成できます
+                    先にキャリア診断を受けると、より精度の高い自己PRを生成できます
                   </p>
                   <Link
                     href="/diagnosis"
@@ -56,7 +56,7 @@ export default function ResumeTypePage() {
           <div className="text-center mb-10">
             <h1 className="text-3xl font-bold mb-2">書類を作成する</h1>
             <p className="text-muted-foreground">
-              AIがあなたの情報をもとに、転職用の書類を自動作成します
+              あなたの情報をもとに、転職用の書類を自動作成します
             </p>
           </div>
 

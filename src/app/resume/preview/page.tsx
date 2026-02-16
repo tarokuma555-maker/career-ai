@@ -440,7 +440,7 @@ function ResumePreview({
         <EditableText sectionKey="resume-selfPR" value={data.selfPR} rows={6} />
       </div>
 
-      <p className="text-center text-[10px] text-muted-foreground border-t pt-3">Career AI で自動生成されました</p>
+      <p className="text-center text-[10px] text-muted-foreground border-t pt-3">Career Planning で自動生成されました</p>
     </div>
   );
 }
@@ -557,7 +557,7 @@ function CVPreview({
       )}
 
       <p className="text-right text-xs mt-4">以上</p>
-      <p className="text-center text-[10px] text-muted-foreground border-t pt-3">Career AI で自動生成されました</p>
+      <p className="text-center text-[10px] text-muted-foreground border-t pt-3">Career Planning で自動生成されました</p>
     </div>
   );
 }

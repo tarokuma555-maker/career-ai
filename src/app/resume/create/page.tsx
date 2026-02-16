@@ -738,7 +738,7 @@ function ResumeCreatePage() {
                         <FieldError name="selfPR" />
                         <Button variant="outline" size="sm" className="gap-1.5 mt-2" onClick={() => handleGenerateAI("selfPR")} disabled={isGeneratingPR}>
                           {isGeneratingPR ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                          AIに自己PRを生成してもらう
+                          自己PRを自動生成する
                         </Button>
                       </div>
                       <div>
@@ -749,7 +749,7 @@ function ResumeCreatePage() {
                         <Textarea placeholder="志望動機があれば記入してください" value={formData.motivation} onChange={e => setFormData(prev => ({ ...prev, motivation: e.target.value }))} rows={5} />
                         <Button variant="outline" size="sm" className="gap-1.5 mt-2" onClick={() => handleGenerateAI("motivation")} disabled={isGeneratingMotivation}>
                           {isGeneratingMotivation ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                          AIに志望動機を生成してもらう
+                          志望動機を自動生成する
                         </Button>
                       </div>
                     </div>

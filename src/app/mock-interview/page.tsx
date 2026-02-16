@@ -145,7 +145,7 @@ export default function MockInterviewPage() {
                 <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto" />
                 <h1 className="text-lg font-bold">今月の無料枠を使い切りました</h1>
                 <p className="text-sm text-muted-foreground">
-                  AI模擬面接は月1回まで無料でご利用いただけます。
+                  模擬面接は月1回まで無料でご利用いただけます。
                   プレミアムプランなら無制限で練習できます。
                 </p>
                 <div className="pt-2">
@@ -174,10 +174,10 @@ export default function MockInterviewPage() {
             </Link>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <MessageSquare className="w-6 h-6 text-primary" />
-              AI模擬面接
+              模擬面接
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              AIが面接官になって、テキストチャット形式で面接練習ができます
+              面接官とテキストチャット形式で面接練習ができます
             </p>
           </div>
 

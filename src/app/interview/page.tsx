@@ -340,7 +340,7 @@ export default function InterviewPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <Brain className="w-6 h-6 text-blue-500" />
-                    AI面接対策
+                    面接対策
                     <Badge variant="secondary" className="text-xs">
                       月1回無料
                     </Badge>
@@ -358,12 +358,12 @@ export default function InterviewPage() {
                     </li>
                     <li className="flex items-center gap-2">
                       <CheckCircle2 className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                      AIが回答を添削（月1回無料）
+                      回答を添削（月1回無料）
                     </li>
                   </ul>
                   <Button className="w-full gap-2">
                     <Brain className="w-4 h-4" />
-                    AI面接対策を始める
+                    面接対策を始める
                   </Button>
                 </CardContent>
               </Card>
@@ -642,8 +642,8 @@ export default function InterviewPage() {
                   <Mic className="w-6 h-6 text-primary" />
                 </div>
                 <div className="flex-1 text-center sm:text-left">
-                  <p className="text-sm font-bold mb-1">AI模擬面接で実践練習</p>
-                  <p className="text-xs text-muted-foreground">AIが面接官になって、本番さながらの面接練習ができます。音声で回答し、リアルタイムでフィードバックを受けられます。</p>
+                  <p className="text-sm font-bold mb-1">模擬面接で実践練習</p>
+                  <p className="text-xs text-muted-foreground">面接官になって、本番さながらの面接練習ができます。音声で回答し、リアルタイムでフィードバックを受けられます。</p>
                 </div>
                 <Button asChild className="gap-2 flex-shrink-0">
                   <Link href="/mock-interview">
@@ -662,12 +662,12 @@ export default function InterviewPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Brain className="w-5 h-5 text-blue-500" />
-                    AIに回答を添削してもらう
+                    回答を添削してもらう
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    各質問に対する回答を入力すると、AIが添削して改善案を提示します。
+                    各質問に対する回答を入力すると、添削して改善案を提示します。
                   </p>
                   <div className="flex flex-col items-center gap-2">
                     <Button
@@ -700,7 +700,7 @@ export default function InterviewPage() {
                 <CardContent className="pt-6 space-y-4">
                   <div className="text-center space-y-2">
                     <Lock className="w-8 h-8 text-orange-500 mx-auto" />
-                    <h3 className="font-bold">AI添削の無料回数を使い切りました</h3>
+                    <h3 className="font-bold">添削の無料回数を使い切りました</h3>
                   </div>
 
                   {hasAnyAnswer && (
@@ -733,10 +733,10 @@ export default function InterviewPage() {
                     <CardContent className="pt-4 space-y-2">
                       <div className="flex items-center gap-2">
                         <Star className="w-4 h-4 text-blue-500" />
-                        <p className="text-sm font-medium">プレミアムで無制限にAI添削</p>
+                        <p className="text-sm font-medium">プレミアムで無制限に添削</p>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        月額¥980で全質問をAIが添削
+                        月額¥980で全質問を添削
                       </p>
                       <Button className="w-full gap-2" disabled>
                         <Star className="w-4 h-4" />
@@ -765,7 +765,7 @@ export default function InterviewPage() {
       <PageTransition>
       <main className="relative z-10 min-h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
-          <AIThinking text="AIが回答を添削しています..." />
+          <AIThinking text="回答を添削しています..." />
         </div>
       </main>
       </PageTransition>
@@ -812,7 +812,7 @@ export default function InterviewPage() {
                 <CardContent className="pt-6 space-y-3">
                   <div className="flex items-center gap-2">
                     <Lock className="w-5 h-5 text-orange-500" />
-                    <p className="text-sm font-medium">今月のAI添削無料枠を使い切りました</p>
+                    <p className="text-sm font-medium">今月の添削無料枠を使い切りました</p>
                   </div>
                   <p className="text-sm text-muted-foreground">
                     来月また1回無料で利用できます。さらに添削を受けたい場合はLINEでプロに相談しましょう。
@@ -851,7 +851,7 @@ export default function InterviewPage() {
               </Link>
             </div>
             <p className="text-xs text-center text-muted-foreground">
-              AI添削 残り {getInterviewRemaining()}/1 回（今月）
+              添削 残り {getInterviewRemaining()}/1 回（今月）
             </p>
           </motion.div>
         </div>

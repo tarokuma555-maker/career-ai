@@ -125,7 +125,7 @@ export default function AnalyzingPage() {
           </div>
 
           <h1 className="font-heading text-2xl font-bold mb-2">
-            {error ? "エラーが発生しました" : "AIが分析中です"}
+            {error ? "エラーが発生しました" : "分析中です"}
           </h1>
           <p className="text-sm text-muted-foreground mb-8">
             {error

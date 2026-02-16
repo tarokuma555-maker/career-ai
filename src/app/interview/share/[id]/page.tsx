@@ -223,7 +223,7 @@ export default function SharedInterviewPage() {
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-sm">✨</span>
                         <span className="text-sm font-medium text-muted-foreground">
-                          AI改善案
+                          改善案
                         </span>
                       </div>
                       <div className="bg-blue-50 dark:bg-blue-950/20 border-l-4 border-blue-400 dark:border-blue-700 rounded-r-lg p-4 text-sm whitespace-pre-wrap leading-relaxed">
@@ -278,7 +278,7 @@ export default function SharedInterviewPage() {
                 ) : q.userAnswer ? (
                   <p className="text-sm text-muted-foreground italic pt-2 border-t flex items-center gap-2">
                     <MessageCircle className="w-3.5 h-3.5" />
-                    AI添削なし — エージェントがサポートします
+                    添削なし — エージェントがサポートします
                   </p>
                 ) : null}
               </CardContent>
@@ -295,7 +295,7 @@ export default function SharedInterviewPage() {
         >
           {hasAnyReview ? (
             <p className="text-sm text-muted-foreground">
-              AI添削済みの回答です。さらに詳しいアドバイスはエージェントにご相談ください。
+              添削済みの回答です。さらに詳しいアドバイスはエージェントにご相談ください。
             </p>
           ) : hasAnyAnswer ? (
             <p className="text-sm text-muted-foreground">
@@ -308,7 +308,7 @@ export default function SharedInterviewPage() {
           )}
 
           <Link href="/diagnosis">
-            <Button size="lg">キャリアAIで自分も面接対策する</Button>
+            <Button size="lg">自分も面接対策する</Button>
           </Link>
         </motion.div>
       </div>

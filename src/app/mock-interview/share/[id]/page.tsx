@@ -168,7 +168,7 @@ export default function SharedMockInterviewPage() {
                 <p className="text-sm text-muted-foreground">{error || "共有データが見つかりませんでした。"}</p>
                 <p className="text-xs text-muted-foreground">共有リンクは作成から90日間有効です。</p>
                 <Link href="/mock-interview">
-                  <Button className="mt-2">AI模擬面接を体験する</Button>
+                  <Button className="mt-2">模擬面接を体験する</Button>
                 </Link>
               </CardContent>
             </Card>
@@ -291,7 +291,7 @@ export default function SharedMockInterviewPage() {
             <Link href="/mock-interview">
               <Button size="lg" className="gap-2">
                 <Mic className="w-4 h-4" />
-                キャリアAIで模擬面接を体験する
+                模擬面接を体験する
               </Button>
             </Link>
           </motion.div>

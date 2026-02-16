@@ -12,11 +12,11 @@ export default function Home() {
         <div className="glass-card p-10 sm:p-16 text-center max-w-2xl mx-auto">
           <h1 className="font-heading text-5xl sm:text-7xl font-bold tracking-tight mb-6">
             <span className="bg-accent-gradient bg-clip-text text-transparent bg-[length:200%_200%] animate-gradient-shift">
-              Career AI
+              Career Planning
             </span>
           </h1>
           <TypingText
-            text="AIがあなたに最適なキャリアプランを提案します"
+            text="あなたに最適なキャリアプランを提案します"
             speed={40}
             delay={600}
             className="text-lg sm:text-xl text-muted-foreground block mb-10"
@@ -27,7 +27,7 @@ export default function Home() {
               size="lg"
               className="text-base px-10 py-7 rounded-2xl animate-pulse-glow"
             >
-              無料でキャリア診断を始める
+              キャリアプランニングを始める
             </Button>
           </Link>
         </div>

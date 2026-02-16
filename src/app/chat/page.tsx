@@ -127,7 +127,7 @@ function LimitReachedCard({
               </span>
             </div>
             <p className="text-xs text-muted-foreground">
-              月額¥980でAIチャットが無制限で利用できます
+              月額¥980でチャットが無制限で利用できます
             </p>
             <Button
               className="w-full gap-2"
@@ -455,7 +455,7 @@ export default function ChatPage() {
             <Bot className="w-4 h-4 text-white" />
           </div>
           <div>
-            <p className="text-sm font-medium leading-tight">キャリアAI</p>
+            <p className="text-sm font-medium leading-tight">キャリアプランニング</p>
             <p className="text-xs text-muted-foreground">
               {isStreaming ? "入力中..." : "オンライン"}
             </p>
