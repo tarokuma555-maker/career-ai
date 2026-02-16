@@ -50,6 +50,7 @@ export const VALUES = [
 // Step 1: あなたについて
 export const step1Schema = z
   .object({
+    name: z.string().min(1, "氏名を入力してください"),
     ageRange: z.string().min(1, "年齢層を選択してください"),
     employmentStatus: z.string().min(1, "就業状況を選択してください"),
     jobType: z.string().min(1, "職種を選択してください"),

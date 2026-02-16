@@ -20,6 +20,7 @@ export interface AnalysisResult {
   career_paths: CareerPath[];
   skill_analysis: SkillAnalysis;
   overall_advice: string;
+  diagnosisId?: string;
 }
 
 export interface InterviewQuestion {

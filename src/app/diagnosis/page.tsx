@@ -47,6 +47,7 @@ const slideVariants = {
 
 type FormData = {
   // Step 1
+  name: string;
   ageRange: string;
   employmentStatus: string;
   jobType: string;
@@ -57,6 +58,7 @@ type FormData = {
 };
 
 const initialFormData: FormData = {
+  name: "",
   ageRange: "",
   employmentStatus: "",
   jobType: "",
@@ -111,6 +113,7 @@ export default function DiagnosisPage() {
     const schemas = [step1Schema, step2Schema];
     const stepDataMap = [
       {
+        name: formData.name,
         ageRange: formData.ageRange,
         employmentStatus: formData.employmentStatus,
         jobType: formData.jobType,
@@ -149,6 +152,7 @@ export default function DiagnosisPage() {
       setCurrentStep(currentStep + 1);
     } else {
       const dataToSave: DiagnosisData = {
+        name: formData.name,
         ageRange: formData.ageRange,
         employmentStatus: formData.employmentStatus,
         jobType: formData.jobType,
@@ -253,6 +257,18 @@ export default function DiagnosisPage() {
                 {/* === Step 1: あなたについて === */}
                 {currentStep === 0 && (
                   <div className="space-y-5">
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">
+                        氏名 <span className="text-destructive">*</span>
+                      </label>
+                      <Input
+                        placeholder="例: 山田太郎"
+                        value={formData.name}
+                        onChange={(e) => updateField("name", e.target.value)}
+                      />
+                      <FieldError name="name" />
+                    </div>
+
                     <div>
                       <label className="text-sm font-medium mb-1.5 block">
                         年齢層 <span className="text-destructive">*</span>

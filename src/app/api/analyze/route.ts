@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { kv } from "@vercel/kv";
+import { nanoid } from "nanoid";
 import type { DiagnosisData } from "@/lib/diagnosis-schema";
 import type { AnalysisResult } from "@/lib/types";
+import type { StoredDiagnosis, DiagnosisIndexEntry } from "@/lib/agent-types";
 
 // ---------- レート制限（インメモリ / HMR耐性） ----------
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1分
@@ -182,7 +185,38 @@ export async function POST(request: NextRequest) {
     }
 
     const result = parseAnalysisResponse(text);
-    return NextResponse.json(result);
+
+    // KV に診断データを保存（エージェント管理画面用）
+    let diagnosisId: string | undefined;
+    try {
+      diagnosisId = nanoid(12);
+      const stored: StoredDiagnosis = {
+        diagnosisData,
+        analysisResult: result,
+        createdAt: Date.now(),
+      };
+      await kv.set(
+        `career-ai:diagnosis:${diagnosisId}`,
+        JSON.stringify(stored),
+        { ex: 60 * 60 * 24 * 90 }, // 90日
+      );
+      const indexEntry: DiagnosisIndexEntry = {
+        id: diagnosisId,
+        createdAt: stored.createdAt,
+        name: diagnosisData.name,
+        ageRange: diagnosisData.ageRange,
+        jobType:
+          diagnosisData.jobType === "その他" && diagnosisData.jobTypeOther
+            ? diagnosisData.jobTypeOther
+            : diagnosisData.jobType,
+        employmentStatus: diagnosisData.employmentStatus,
+      };
+      await kv.lpush("career-ai:diagnosis-index", JSON.stringify(indexEntry));
+    } catch (err) {
+      console.error("KV storage error (non-fatal):", err);
+    }
+
+    return NextResponse.json({ ...result, diagnosisId });
   } catch (error) {
     if (error instanceof Error && error.message.includes("パース")) {
       return NextResponse.json(

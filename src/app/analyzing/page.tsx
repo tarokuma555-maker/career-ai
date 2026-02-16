@@ -83,6 +83,9 @@ export default function AnalyzingPage() {
       setCompletedSteps((prev) => new Set(prev).add(2));
 
       localStorage.setItem("analysisResult", JSON.stringify(data));
+      if (data.diagnosisId) {
+        localStorage.setItem("diagnosisId", data.diagnosisId);
+      }
       await wait(800);
       router.push("/result");
     } catch {
