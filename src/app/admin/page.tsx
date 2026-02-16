@@ -12,10 +12,13 @@ import {
   Users,
   Calendar,
   Briefcase,
+  Search,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import PageTransition from "@/components/PageTransition";
 import type { DiagnosisIndexEntry } from "@/lib/agent-types";
 
@@ -32,12 +35,25 @@ export default function AdminDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  const fetchDiagnoses = useCallback(async (p: number) => {
+  // 検索デバウンス
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const fetchDiagnoses = useCallback(async (p: number, search: string) => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/admin/diagnoses?page=${p}`);
+      const params = new URLSearchParams({ page: String(p) });
+      if (search) params.set("search", search);
+      const res = await fetch(`/api/admin/diagnoses?${params}`);
       if (res.status === 401) {
         router.push("/admin/login");
         return;
@@ -53,8 +69,8 @@ export default function AdminDashboardPage() {
   }, [router]);
 
   useEffect(() => {
-    fetchDiagnoses(page);
-  }, [page, fetchDiagnoses]);
+    fetchDiagnoses(page, debouncedSearch);
+  }, [page, debouncedSearch, fetchDiagnoses]);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -101,12 +117,47 @@ export default function AdminDashboardPage() {
                 <CardContent className="pt-4 pb-4 flex items-center gap-3">
                   <Users className="w-5 h-5 text-primary" />
                   <span className="text-sm">
-                    全 <span className="font-bold">{data.total}</span> 件の診断データ
+                    {debouncedSearch ? (
+                      <>
+                        「<span className="font-bold">{debouncedSearch}</span>」の検索結果:{" "}
+                        <span className="font-bold">{data.total}</span> 件
+                      </>
+                    ) : (
+                      <>
+                        全 <span className="font-bold">{data.total}</span> 件の診断データ
+                      </>
+                    )}
                   </span>
                 </CardContent>
               </Card>
             </motion.div>
           )}
+
+          {/* 検索バー */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+          >
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="text"
+                placeholder="名前で検索..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-9"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </motion.div>
 
           {/* ローディング */}
           {isLoading && (
@@ -129,7 +180,11 @@ export default function AdminDashboardPage() {
             <>
               {data.diagnoses.length === 0 ? (
                 <div className="text-center py-12">
-                  <p className="text-muted-foreground">まだ診断データがありません。</p>
+                  <p className="text-muted-foreground">
+                    {debouncedSearch
+                      ? "該当する診断データが見つかりませんでした。"
+                      : "まだ診断データがありません。"}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-3">
