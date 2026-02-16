@@ -4,14 +4,8 @@ import {
   Packer,
   Paragraph,
   TextRun,
-  Table,
-  TableRow,
-  TableCell,
   AlignmentType,
   BorderStyle,
-  WidthType,
-  TableLayoutType,
-  VerticalAlign,
 } from "docx";
 import { kv } from "@vercel/kv";
 import OpenAI from "openai";
@@ -55,24 +49,51 @@ interface ResumeRequest {
 // ---------- Helpers ----------
 const FONT = "游ゴシック";
 const SIZE = 21;
-const FULL_WIDTH = 9638;
+const SIZE_L = 24;
 
-const borders = {
-  top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-};
-
-function t(text: string, bold = false, size = SIZE) {
+function tr(text: string, bold = false, size = SIZE) {
   return new TextRun({ text, bold, size, font: FONT });
 }
 
-function p(text: string, opts?: { bold?: boolean; spacing?: { before?: number; after?: number }; alignment?: (typeof AlignmentType)[keyof typeof AlignmentType] }) {
+/** セクション見出し（■付き） */
+function sectionHeading(text: string): Paragraph {
   return new Paragraph({
-    alignment: opts?.alignment,
-    spacing: opts?.spacing,
-    children: [t(text, opts?.bold)],
+    spacing: { before: 300, after: 120 },
+    children: [tr(text, true, SIZE_L)],
+    border: {
+      bottom: { style: BorderStyle.SINGLE, size: 2, color: "333333", space: 4 },
+    },
+  });
+}
+
+/** ラベル: 値 を1行で */
+function labelValue(label: string, value: string): Paragraph {
+  return new Paragraph({
+    spacing: { after: 40 },
+    children: [
+      tr(`${label}：`, true),
+      tr(value),
+    ],
+  });
+}
+
+/** 通常テキスト行 */
+function textLine(text: string, opts?: { bold?: boolean; indent?: number; spacing?: { before?: number; after?: number } }): Paragraph {
+  return new Paragraph({
+    spacing: opts?.spacing ?? { after: 40 },
+    indent: opts?.indent ? { left: opts.indent } : undefined,
+    children: [tr(text, opts?.bold)],
+  });
+}
+
+/** 区切り線 */
+function separator(): Paragraph {
+  return new Paragraph({
+    spacing: { before: 80, after: 80 },
+    border: {
+      bottom: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC", space: 4 },
+    },
+    children: [],
   });
 }
 
@@ -185,82 +206,47 @@ ${workHistoryToText(workHistory)}
   }
 }
 
-// ---------- DOCX Generation ----------
-function createWorkHistoryTable(work: WorkHistory): Table {
-  const rows: TableRow[] = [];
+// ---------- DOCX Generation (テキストベース、表なし) ----------
+function buildWorkHistoryParagraphs(work: WorkHistory): Paragraph[] {
+  const out: Paragraph[] = [];
 
-  // Row 1: Period + Company name + Employment type
-  rows.push(new TableRow({
+  // ヘッダー行: 期間 + 会社名 + 雇用形態
+  out.push(new Paragraph({
+    spacing: { before: 100, after: 60 },
     children: [
-      new TableCell({
-        width: { size: Math.floor(FULL_WIDTH * 0.7), type: WidthType.DXA },
-        borders,
-        children: [
-          new Paragraph({
-            spacing: { before: 60, after: 60 },
-            children: [t(`${work.periodFrom}～${work.periodTo}　${work.companyName}`, true)],
-          }),
-        ],
-      }),
-      new TableCell({
-        width: { size: Math.floor(FULL_WIDTH * 0.3), type: WidthType.DXA },
-        borders,
-        verticalAlign: VerticalAlign.CENTER,
-        children: [
-          new Paragraph({
-            alignment: AlignmentType.RIGHT,
-            children: [t(`${work.employmentType}として勤務`)],
-          }),
-        ],
-      }),
+      tr(`${work.periodFrom}～${work.periodTo}　`, true),
+      tr(work.companyName, true),
+      tr(`　（${work.employmentType}）`),
     ],
   }));
 
-  // Row 2: Company info
-  const companyInfoParagraphs: Paragraph[] = [];
-  if (work.businessDescription) {
-    companyInfoParagraphs.push(p(`事業内容：${work.businessDescription}`, { spacing: { after: 40 } }));
-  }
+  // 会社情報
+  if (work.businessDescription) out.push(labelValue("事業内容", work.businessDescription));
   if (work.capital || work.revenue) {
-    companyInfoParagraphs.push(p(`資本金：${work.capital || "—"}　売上高：${work.revenue || "—"}`, { spacing: { after: 40 } }));
+    const parts: string[] = [];
+    if (work.capital) parts.push(`資本金 ${work.capital}`);
+    if (work.revenue) parts.push(`売上高 ${work.revenue}`);
+    out.push(textLine(parts.join("　／　"), { indent: 200 }));
   }
   if (work.employees || work.listing) {
-    companyInfoParagraphs.push(p(`従業員数：${work.employees || "—"}　上場：${work.listing || "—"}`, { spacing: { after: 40 } }));
-  }
-  if (companyInfoParagraphs.length > 0) {
-    rows.push(new TableRow({
-      children: [
-        new TableCell({
-          columnSpan: 2,
-          width: { size: FULL_WIDTH, type: WidthType.DXA },
-          borders,
-          children: companyInfoParagraphs,
-        }),
-      ],
-    }));
+    const parts: string[] = [];
+    if (work.employees) parts.push(`従業員数 ${work.employees}`);
+    if (work.listing) parts.push(`上場 ${work.listing}`);
+    out.push(textLine(parts.join("　／　"), { indent: 200 }));
   }
 
-  // Row 3: Department + Period
+  // 配属部署
   if (work.department) {
-    rows.push(new TableRow({
+    out.push(new Paragraph({
+      spacing: { before: 80, after: 40 },
       children: [
-        new TableCell({
-          columnSpan: 2,
-          width: { size: FULL_WIDTH, type: WidthType.DXA },
-          borders,
-          children: [
-            new Paragraph({
-              spacing: { before: 60, after: 60 },
-              children: [t(`${work.deptPeriodFrom || work.periodFrom}～${work.deptPeriodTo || work.periodTo}　${work.department}`, true)],
-            }),
-          ],
-        }),
+        tr(`${work.deptPeriodFrom || work.periodFrom}～${work.deptPeriodTo || work.periodTo}　`, true),
+        tr(work.department, true),
       ],
     }));
   }
 
-  // Row 4: Detail sections
-  const detailParagraphs: Paragraph[] = [];
+  // 業務詳細セクション
   const sections: [string, string][] = [
     ["業務内容", work.duties],
     ["取扱商品", work.products],
@@ -272,89 +258,13 @@ function createWorkHistoryTable(work: WorkHistory): Table {
 
   for (const [label, content] of sections) {
     if (!content) continue;
-    detailParagraphs.push(new Paragraph({
-      spacing: { before: 80, after: 40 },
-      children: [t(`【${label}】`, true)],
-    }));
+    out.push(textLine(`【${label}】`, { bold: true, spacing: { before: 80, after: 30 } }));
     for (const line of content.split("\n").filter(Boolean)) {
-      detailParagraphs.push(new Paragraph({
-        spacing: { after: 30 },
-        children: [t(line)],
-      }));
+      out.push(textLine(line, { indent: 200 }));
     }
   }
 
-  if (detailParagraphs.length > 0) {
-    rows.push(new TableRow({
-      children: [
-        new TableCell({
-          columnSpan: 2,
-          width: { size: FULL_WIDTH, type: WidthType.DXA },
-          borders,
-          children: detailParagraphs,
-        }),
-      ],
-    }));
-  }
-
-  return new Table({
-    width: { size: FULL_WIDTH, type: WidthType.DXA },
-    layout: TableLayoutType.FIXED,
-    rows,
-  });
-}
-
-function createPCSkillsTable(pcSkills: ResumeRequest["pcSkills"]): Table {
-  const entries: [string, string][] = [
-    ["Word", pcSkills.word],
-    ["Excel", pcSkills.excel],
-    ["PowerPoint", pcSkills.powerpoint],
-  ];
-  if (pcSkills.other) entries.push(["その他", pcSkills.other]);
-
-  return new Table({
-    width: { size: FULL_WIDTH, type: WidthType.DXA },
-    layout: TableLayoutType.FIXED,
-    rows: entries.filter(([, v]) => v).map(([label, value]) =>
-      new TableRow({
-        children: [
-          new TableCell({
-            width: { size: 2400, type: WidthType.DXA },
-            borders,
-            children: [new Paragraph({ children: [t(label, true)] })],
-          }),
-          new TableCell({
-            width: { size: FULL_WIDTH - 2400, type: WidthType.DXA },
-            borders,
-            children: [new Paragraph({ children: [t(value)] })],
-          }),
-        ],
-      })
-    ),
-  });
-}
-
-function createQualificationsTable(qualifications: { name: string; date: string }[]): Table {
-  return new Table({
-    width: { size: FULL_WIDTH, type: WidthType.DXA },
-    layout: TableLayoutType.FIXED,
-    rows: qualifications.map(q =>
-      new TableRow({
-        children: [
-          new TableCell({
-            width: { size: 5800, type: WidthType.DXA },
-            borders,
-            children: [new Paragraph({ children: [t(q.name)] })],
-          }),
-          new TableCell({
-            width: { size: FULL_WIDTH - 5800, type: WidthType.DXA },
-            borders,
-            children: [new Paragraph({ children: [t(q.date)] })],
-          }),
-        ],
-      })
-    ),
-  });
+  return out;
 }
 
 // ---------- Route Handler ----------
@@ -413,85 +323,90 @@ export async function POST(request: NextRequest) {
   }
 
   // Build document children
-  const children: (Paragraph | Table)[] = [];
+  const children: Paragraph[] = [];
 
-  // (1) Title
+  // (1) タイトル
   children.push(new Paragraph({
     alignment: AlignmentType.CENTER,
     spacing: { after: 200 },
     children: [new TextRun({ text: "職 務 経 歴 書", bold: true, size: 32, font: FONT })],
   }));
 
-  // (2) Date
+  // (2) 日付
   children.push(new Paragraph({
     alignment: AlignmentType.RIGHT,
     spacing: { after: 40 },
-    children: [t(`${date}現在`)],
+    children: [tr(`${date}現在`)],
   }));
 
-  // (3) Name
+  // (3) 氏名
   children.push(new Paragraph({
     alignment: AlignmentType.RIGHT,
     spacing: { after: 300 },
     children: [new TextRun({ text: `氏名　${name}`, size: SIZE, font: FONT, underline: { type: "single" } })],
   }));
 
-  // (4) Summary
+  // (4) 職務要約
   if (summaryText) {
-    children.push(p("■職務要約", { bold: true, spacing: { before: 200, after: 120 } }));
+    children.push(sectionHeading("■職務要約"));
     for (const line of summaryText.split("\n").filter(Boolean)) {
+      children.push(textLine(line));
+    }
+  }
+
+  // (5) 職務経歴
+  children.push(sectionHeading("■職務経歴"));
+  for (let i = 0; i < workHistory.length; i++) {
+    children.push(...buildWorkHistoryParagraphs(workHistory[i]));
+    if (i < workHistory.length - 1) {
+      children.push(separator());
+    }
+  }
+
+  // (6) PCスキル
+  const hasSkills = pcSkills.word || pcSkills.excel || pcSkills.powerpoint || pcSkills.other;
+  if (hasSkills) {
+    children.push(sectionHeading("■PCスキル"));
+    if (pcSkills.word) children.push(labelValue("Word", pcSkills.word));
+    if (pcSkills.excel) children.push(labelValue("Excel", pcSkills.excel));
+    if (pcSkills.powerpoint) children.push(labelValue("PowerPoint", pcSkills.powerpoint));
+    if (pcSkills.other) children.push(labelValue("その他", pcSkills.other));
+  }
+
+  // (7) 資格
+  const validQualifications = qualifications.filter(q => q.name);
+  if (validQualifications.length > 0) {
+    children.push(sectionHeading("■資格"));
+    for (const q of validQualifications) {
       children.push(new Paragraph({
-        spacing: { after: 60 },
-        children: [t(line)],
+        spacing: { after: 40 },
+        children: [
+          tr(q.name),
+          tr(q.date ? `　（${q.date}）` : ""),
+        ],
       }));
     }
   }
 
-  // (5) Work History
-  children.push(p("■職務経歴", { bold: true, spacing: { before: 200, after: 120 } }));
-  for (let i = 0; i < workHistory.length; i++) {
-    children.push(createWorkHistoryTable(workHistory[i]));
-    if (i < workHistory.length - 1) {
-      children.push(new Paragraph({ spacing: { after: 200 }, children: [] }));
-    }
-  }
-
-  // (6) PC Skills
-  const hasSkills = pcSkills.word || pcSkills.excel || pcSkills.powerpoint || pcSkills.other;
-  if (hasSkills) {
-    children.push(p("■PCスキル", { bold: true, spacing: { before: 300, after: 120 } }));
-    children.push(createPCSkillsTable(pcSkills));
-  }
-
-  // (7) Qualifications
-  const validQualifications = qualifications.filter(q => q.name);
-  if (validQualifications.length > 0) {
-    children.push(p("■資格", { bold: true, spacing: { before: 300, after: 120 } }));
-    children.push(createQualificationsTable(validQualifications));
-  }
-
-  // (8) Self PR
+  // (8) 自己PR
   if (prData.length > 0) {
-    children.push(p("■自己PR", { bold: true, spacing: { before: 300, after: 120 } }));
+    children.push(sectionHeading("■自己PR"));
     for (const pr of prData) {
       children.push(new Paragraph({
         spacing: { before: 160, after: 80 },
-        children: [t(`＜${pr.title}＞`, true)],
+        children: [tr(`＜${pr.title}＞`, true)],
       }));
       for (const line of pr.content.split("\n").filter(Boolean)) {
-        children.push(new Paragraph({
-          spacing: { after: 40 },
-          children: [t(line)],
-        }));
+        children.push(textLine(line));
       }
     }
   }
 
-  // (9) End
+  // (9) 以上
   children.push(new Paragraph({
     alignment: AlignmentType.RIGHT,
     spacing: { before: 300 },
-    children: [t("以上")],
+    children: [tr("以上")],
   }));
 
   // Create document
