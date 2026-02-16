@@ -51,6 +51,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import PageTransition from "@/components/PageTransition";
 import AIThinking from "@/components/AIThinking";
+import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import type { CareerPath } from "@/lib/types";
 import type {
   StoredDiagnosis,
@@ -173,6 +174,8 @@ export default function AdminResultPage() {
   const [expandedPlans, setExpandedPlans] = useState<Set<number>>(new Set([0]));
   const [isExportingSheets, setIsExportingSheets] = useState(false);
   const [isExportingDocs, setIsExportingDocs] = useState(false);
+  const [exportedUrl, setExportedUrl] = useState<{ url: string; type: string } | null>(null);
+  const { getAccessToken } = useGoogleAuth();
 
   // データ取得
   useEffect(() => {
@@ -238,25 +241,93 @@ export default function AdminResultPage() {
     }
   }, [diagnosisId]);
 
-  // エクスポート
+  // エクスポート（Google Drive にアップロード → Google Sheets/Docs で新しいタブで開く）
   const handleExport = useCallback(async (type: "sheets" | "docs") => {
     const setLoading = type === "sheets" ? setIsExportingSheets : setIsExportingDocs;
     setLoading(true);
+    setExportedUrl(null);
+
     try {
+      // 1. Google 認証（初回はポップアップ表示）
+      const token = await getAccessToken();
+
+      // 2. サーバーで .xlsx/.docx を生成
       const res = await fetch(`/api/admin/export/${type}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ diagnosisId }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      window.open(data.url, "_blank");
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error);
+      }
+      const blob = await res.blob();
+
+      // 3. ファイル名を取得
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const nameMatch = disposition.match(/filename\*=UTF-8''(.+)/);
+      const rawName = nameMatch
+        ? decodeURIComponent(nameMatch[1])
+        : `export.${type === "sheets" ? "xlsx" : "docx"}`;
+      const displayName = rawName.replace(/\.(xlsx|docx)$/, "");
+
+      // 4. Google Drive にアップロード（Google 形式に自動変換）
+      const googleMimeType =
+        type === "sheets"
+          ? "application/vnd.google-apps.spreadsheet"
+          : "application/vnd.google-apps.document";
+
+      const boundary = "---career_ai_" + Date.now();
+      const metadata = JSON.stringify({
+        name: displayName,
+        mimeType: googleMimeType,
+      });
+
+      const body = new Blob([
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+        metadata,
+        `\r\n--${boundary}\r\nContent-Type: ${blob.type}\r\n\r\n`,
+        blob,
+        `\r\n--${boundary}--`,
+      ]);
+
+      const uploadRes = await fetch(
+        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": `multipart/related; boundary=${boundary}`,
+          },
+          body,
+        },
+      );
+
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json();
+        throw new Error(
+          errData.error?.message || "Google Driveへのアップロードに失敗しました",
+        );
+      }
+
+      const file = await uploadRes.json();
+
+      // 5. Google Sheets / Docs の URL を生成
+      const baseUrl =
+        type === "sheets"
+          ? "https://docs.google.com/spreadsheets/d/"
+          : "https://docs.google.com/document/d/";
+      const fileUrl = `${baseUrl}${file.id}/edit`;
+      const label = type === "sheets" ? "Google スプレッドシート" : "Google ドキュメント";
+
+      // URL をステートに保存して画面にリンクを表示
+      setExportedUrl({ url: fileUrl, type: label });
     } catch (err) {
       setError(err instanceof Error ? err.message : "エクスポートに失敗しました");
     } finally {
       setLoading(false);
     }
-  }, [diagnosisId]);
+  }, [diagnosisId, getAccessToken]);
 
   const togglePlan = (i: number) => {
     setExpandedPlans((prev) => {
@@ -343,6 +414,42 @@ export default function AdminResultPage() {
               </Button>
             </div>
           </motion.div>
+
+          {/* エクスポート成功リンク */}
+          {exportedUrl && (
+            <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }}>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-green-800">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{exportedUrl.type}を作成しました</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const a = document.createElement("a");
+                      a.href = exportedUrl.url;
+                      a.target = "_blank";
+                      a.rel = "noopener noreferrer";
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 transition-colors"
+                  >
+                    開く
+                    <ArrowLeft className="w-3.5 h-3.5 rotate-[135deg]" />
+                  </button>
+                  <button
+                    onClick={() => setExportedUrl(null)}
+                    className="text-green-600 hover:text-green-800 text-xs"
+                  >
+                    閉じる
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
           {/* 求職者情報 */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>

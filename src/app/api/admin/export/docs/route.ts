@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { google, docs_v1 } from "googleapis";
+import {
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  HeadingLevel,
+  AlignmentType,
+  BorderStyle,
+} from "docx";
 import { kv } from "@vercel/kv";
-import { getGoogleAuth } from "@/lib/google-auth";
 import type { StoredDiagnosis } from "@/lib/agent-types";
 
 function formatDate(ts: number): string {
@@ -9,109 +16,57 @@ function formatDate(ts: number): string {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/**
- * Google Docs API のリクエストを順番に構築するヘルパー。
- * 挿入は末尾(endOfBody)に追加していく。
- */
-class DocBuilder {
-  requests: docs_v1.Schema$Request[] = [];
-  private index = 1; // ドキュメントの最初のインデックス
+function heading(
+  text: string,
+  level: (typeof HeadingLevel)[keyof typeof HeadingLevel] = HeadingLevel.HEADING_1,
+) {
+  return new Paragraph({
+    text,
+    heading: level,
+    spacing: { before: 300, after: 120 },
+  });
+}
 
-  heading(text: string, level: 1 | 2 | 3 = 1) {
-    this.requests.push({
-      insertText: {
-        location: { index: this.index },
-        text: text + "\n",
-      },
-    });
-    this.requests.push({
-      updateParagraphStyle: {
-        range: {
-          startIndex: this.index,
-          endIndex: this.index + text.length + 1,
-        },
-        paragraphStyle: {
-          namedStyleType: `HEADING_${level}` as docs_v1.Schema$ParagraphStyle["namedStyleType"],
-        },
-        fields: "namedStyleType",
-      },
-    });
-    this.index += text.length + 1;
-  }
+/** ラベル: 値 を1行で表示（ラベル太字） */
+function lv(label: string, value: string) {
+  return new Paragraph({
+    spacing: { after: 60 },
+    children: [
+      new TextRun({ text: `${label}: `, bold: true, size: 22 }),
+      new TextRun({ text: value, size: 22 }),
+    ],
+  });
+}
 
-  paragraph(text: string, bold = false) {
-    if (!text) return;
-    this.requests.push({
-      insertText: {
-        location: { index: this.index },
-        text: text + "\n",
-      },
-    });
-    if (bold) {
-      this.requests.push({
-        updateTextStyle: {
-          range: {
-            startIndex: this.index,
-            endIndex: this.index + text.length,
-          },
-          textStyle: { bold: true },
-          fields: "bold",
-        },
-      });
-    }
-    this.index += text.length + 1;
-  }
+function p(text: string, bold = false) {
+  return new Paragraph({
+    spacing: { after: 80 },
+    children: [new TextRun({ text, bold, size: 22 })],
+  });
+}
 
-  labelValue(label: string, value: string) {
-    const text = `${label}: ${value}`;
-    this.requests.push({
-      insertText: {
-        location: { index: this.index },
-        text: text + "\n",
-      },
-    });
-    // ラベル部分を太字
-    this.requests.push({
-      updateTextStyle: {
-        range: {
-          startIndex: this.index,
-          endIndex: this.index + label.length + 1,
-        },
-        textStyle: { bold: true },
-        fields: "bold",
-      },
-    });
-    this.index += text.length + 1;
-  }
+function bullet(text: string) {
+  return new Paragraph({
+    text,
+    bullet: { level: 0 },
+    spacing: { after: 40 },
+    style: undefined,
+    children: undefined,
+  });
+}
 
-  bullet(text: string) {
-    this.requests.push({
-      insertText: {
-        location: { index: this.index },
-        text: text + "\n",
-      },
-    });
-    this.requests.push({
-      createParagraphBullets: {
-        range: {
-          startIndex: this.index,
-          endIndex: this.index + text.length + 1,
-        },
-        bulletPreset: "BULLET_DISC_CIRCLE_SQUARE",
-      },
-    });
-    this.index += text.length + 1;
-  }
+function divider() {
+  return new Paragraph({
+    spacing: { before: 200, after: 200 },
+    border: {
+      bottom: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
+    },
+  });
+}
 
-  divider() {
-    this.requests.push({
-      insertText: {
-        location: { index: this.index },
-        text: "\n",
-      },
-    });
-    this.index += 1;
-  }
+/** 空行 */
+function spacer() {
+  return new Paragraph({ spacing: { after: 100 }, children: [] });
 }
 
 export async function POST(request: NextRequest) {
@@ -153,10 +108,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const auth = getGoogleAuth();
-    const docsApi = google.docs({ version: "v1", auth });
-    const drive = google.drive({ version: "v3", auth });
-
     const diag = stored.diagnosisData;
     const result = stored.analysisResult;
     const sa = stored.selfAnalysis;
@@ -164,70 +115,86 @@ export async function POST(request: NextRequest) {
     const plan = stored.detailedPlan;
     const name = diag.name || "名前未登録";
     const dateStr = formatDate(stored.createdAt);
-    const title = `${name}_求職者情報_${dateStr}`;
 
-    // ドキュメント作成
-    const doc = await docsApi.documents.create({
-      requestBody: { title },
-    });
-    const documentId = doc.data.documentId!;
+    const children: Paragraph[] = [];
 
-    // コンテンツ構築
-    const builder = new DocBuilder();
-
-    // === 求職者情報 ===
-    builder.heading(`${name} - 求職者情報`, 1);
-    builder.labelValue("氏名", name);
-    builder.labelValue("年齢層", diag.ageRange);
-    builder.labelValue(
-      "職種",
-      diag.jobType === "その他" && diag.jobTypeOther
-        ? diag.jobTypeOther
-        : diag.jobType,
+    // ===== タイトル =====
+    children.push(
+      new Paragraph({
+        text: `${name} - 求職者情報`,
+        heading: HeadingLevel.TITLE,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 200 },
+      }),
     );
-    builder.labelValue("就業状況", diag.employmentStatus);
-    builder.labelValue("気になること", diag.concerns.join("、"));
-    builder.labelValue("大事にしたいこと", diag.values.join("、"));
-    builder.labelValue(
-      "診断日時",
-      new Date(stored.createdAt).toLocaleString("ja-JP"),
+    children.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 300 },
+        children: [
+          new TextRun({ text: `作成日: ${dateStr}`, italics: true, color: "666666" }),
+        ],
+      }),
     );
-    builder.divider();
 
-    // === 基本分析結果 ===
-    builder.heading("基本分析結果", 1);
+    // ===== 求職者情報 =====
+    children.push(heading("求職者情報"));
+    children.push(lv("氏名", name));
+    children.push(lv("年齢層", diag.ageRange));
+    children.push(
+      lv(
+        "職種",
+        diag.jobType === "その他" && diag.jobTypeOther
+          ? diag.jobTypeOther
+          : diag.jobType,
+      ),
+    );
+    children.push(lv("就業状況", diag.employmentStatus));
+    children.push(lv("気になること", diag.concerns.join("、")));
+    children.push(lv("大事にしたいこと", diag.values.join("、")));
+    children.push(
+      lv("診断日時", new Date(stored.createdAt).toLocaleString("ja-JP")),
+    );
+    children.push(divider());
+
+    // ===== 基本分析結果 =====
+    children.push(heading("基本分析結果"));
     for (const path of result.career_paths) {
-      builder.heading(
-        `${path.title}（マッチ度: ${path.match_score}点）`,
-        2,
+      children.push(
+        heading(
+          `${path.title}（マッチ度: ${path.match_score}点）`,
+          HeadingLevel.HEADING_2,
+        ),
       );
-      builder.labelValue(
-        "年収",
-        `${path.salary_range.min}〜${path.salary_range.max}${path.salary_range.unit}`,
+      children.push(
+        lv(
+          "年収",
+          `${path.salary_range.min}〜${path.salary_range.max}${path.salary_range.unit}`,
+        ),
       );
-      builder.paragraph(path.description);
-      builder.paragraph(`推薦理由: ${path.why_recommended}`);
-
+      children.push(p(path.description));
+      children.push(lv("推薦理由", path.why_recommended));
       if (path.roadmap?.length > 0) {
-        builder.paragraph("ロードマップ:", true);
+        children.push(p("ロードマップ:", true));
         for (const step of path.roadmap) {
-          builder.bullet(`${step.period}: ${step.action}`);
+          children.push(bullet(`${step.period}: ${step.action}`));
         }
       }
       if (path.pros?.length > 0) {
-        builder.paragraph("メリット:", true);
-        for (const p of path.pros) builder.bullet(p);
+        children.push(p("メリット:", true));
+        for (const pr of path.pros) children.push(bullet(pr));
       }
       if (path.cons?.length > 0) {
-        builder.paragraph("デメリット:", true);
-        for (const c of path.cons) builder.bullet(c);
+        children.push(p("デメリット:", true));
+        for (const c of path.cons) children.push(bullet(c));
       }
       if (path.risks) {
-        builder.labelValue("リスク", path.risks);
+        children.push(lv("リスク", path.risks));
       }
     }
 
-    builder.heading("スキル分析", 2);
+    // スキル分析
+    children.push(heading("スキル分析", HeadingLevel.HEADING_2));
     const skillKeys = Array.from(
       new Set([
         ...Object.keys(result.skill_analysis.current_skills),
@@ -237,169 +204,271 @@ export async function POST(request: NextRequest) {
     for (const skill of skillKeys) {
       const current = result.skill_analysis.current_skills[skill] ?? 0;
       const target = result.skill_analysis.target_skills[skill] ?? 0;
-      builder.bullet(`${skill}: 現在 ${current} → 目標 ${target}`);
+      children.push(
+        new Paragraph({
+          spacing: { after: 40 },
+          children: [
+            new TextRun({ text: `${skill}`, bold: true, size: 22 }),
+            new TextRun({
+              text: `  現在: ${current}  →  目標: ${target}`,
+              size: 22,
+            }),
+          ],
+        }),
+      );
     }
 
-    builder.heading("AIアドバイス", 2);
-    builder.paragraph(result.overall_advice);
-    builder.divider();
+    children.push(spacer());
+    children.push(heading("AIアドバイス", HeadingLevel.HEADING_2));
+    children.push(p(result.overall_advice));
+    children.push(divider());
 
-    // === 自己分析 ===
+    // ===== 自己分析 =====
     if (sa) {
-      builder.heading("自己分析アンケート回答", 1);
+      children.push(heading("自己分析アンケート回答"));
 
-      builder.heading("強みと適性", 2);
-      builder.labelValue("自然に得意なこと", sa.naturalStrengths.join("、") + (sa.naturalStrengthsOther ? `、${sa.naturalStrengthsOther}` : ""));
-      builder.labelValue("褒められた経験", sa.praisedExperiences.join("、") + (sa.praisedExperiencesOther ? `、${sa.praisedExperiencesOther}` : ""));
+      children.push(heading("強みと適性", HeadingLevel.HEADING_2));
+      children.push(lv("自然に得意なこと", sa.naturalStrengths.join("、") + (sa.naturalStrengthsOther ? `、${sa.naturalStrengthsOther}` : "")));
+      children.push(lv("褒められた経験", sa.praisedExperiences.join("、") + (sa.praisedExperiencesOther ? `、${sa.praisedExperiencesOther}` : "")));
       if (sa.strengths?.length) {
-        builder.labelValue("強み", sa.strengths.join("、") + (sa.strengthsOther ? `、${sa.strengthsOther}` : ""));
+        children.push(lv("強み", sa.strengths.join("、") + (sa.strengthsOther ? `、${sa.strengthsOther}` : "")));
       }
 
-      builder.heading("趣味・適性", 2);
-      builder.labelValue("集中できる趣味", sa.focusedHobbies.join("、") + (sa.focusedHobbiesOther ? `、${sa.focusedHobbiesOther}` : ""));
-      builder.labelValue("3年以上の趣味", sa.longTermHobbies.join("、") + (sa.longTermHobbiesOther ? `、${sa.longTermHobbiesOther}` : ""));
-      builder.labelValue("教えられるスキル", sa.teachableSkills.join("、") + (sa.teachableSkillsOther ? `、${sa.teachableSkillsOther}` : ""));
+      children.push(heading("趣味・適性", HeadingLevel.HEADING_2));
+      children.push(lv("集中できる趣味", sa.focusedHobbies.join("、") + (sa.focusedHobbiesOther ? `、${sa.focusedHobbiesOther}` : "")));
+      children.push(lv("3年以上の趣味", sa.longTermHobbies.join("、") + (sa.longTermHobbiesOther ? `、${sa.longTermHobbiesOther}` : "")));
+      children.push(lv("教えられるスキル", sa.teachableSkills.join("、") + (sa.teachableSkillsOther ? `、${sa.teachableSkillsOther}` : "")));
 
-      builder.heading("経験・価値観", 2);
-      builder.labelValue("感謝された経験", sa.appreciatedExperiences.join("、") + (sa.appreciatedExperiencesOther ? `、${sa.appreciatedExperiencesOther}` : ""));
-      builder.labelValue("遭難シナリオ", sa.survivalScenario + (sa.survivalScenarioOther ? `（${sa.survivalScenarioOther}）` : ""));
-      builder.labelValue("理由", sa.survivalScenarioReason);
+      children.push(heading("経験・価値観", HeadingLevel.HEADING_2));
+      children.push(lv("感謝された経験", sa.appreciatedExperiences.join("、") + (sa.appreciatedExperiencesOther ? `、${sa.appreciatedExperiencesOther}` : "")));
+      children.push(lv("遭難シナリオ", sa.survivalScenario + (sa.survivalScenarioOther ? `（${sa.survivalScenarioOther}）` : "")));
+      children.push(lv("理由", sa.survivalScenarioReason));
 
-      builder.heading("仕事の価値観", 2);
-      builder.labelValue("大切にしたいこと", `1位=${sa.workValue1}, 2位=${sa.workValue2}, 3位=${sa.workValue3}`);
-      builder.labelValue("働くとは", `1位=${sa.workMeaning1}, 2位=${sa.workMeaning2}, 3位=${sa.workMeaning3}`);
+      children.push(heading("仕事の価値観", HeadingLevel.HEADING_2));
+      children.push(lv("大切にしたいこと", `1位=${sa.workValue1}, 2位=${sa.workValue2}, 3位=${sa.workValue3}`));
+      children.push(lv("働くとは", `1位=${sa.workMeaning1}, 2位=${sa.workMeaning2}, 3位=${sa.workMeaning3}`));
 
-      builder.heading("人生設計", 2);
-      builder.labelValue("結婚", sa.marriage);
-      builder.labelValue("子ども", sa.children + (sa.childrenOther ? `（${sa.childrenOther}）` : ""));
-      builder.labelValue("家賃", sa.rent + (sa.rentOther ? `（${sa.rentOther}）` : ""));
-      builder.labelValue("一番大事なこと", sa.priority + (sa.priorityOther ? `（${sa.priorityOther}）` : ""));
-      builder.labelValue("仕事一筋度", `${sa.workDedication}/5`);
-      builder.labelValue("希望年収", sa.desiredIncome + (sa.desiredIncomeOther ? `（${sa.desiredIncomeOther}）` : ""));
+      children.push(heading("人生設計", HeadingLevel.HEADING_2));
+      children.push(lv("結婚", sa.marriage));
+      children.push(lv("子ども", sa.children + (sa.childrenOther ? `（${sa.childrenOther}）` : "")));
+      children.push(lv("家賃", sa.rent + (sa.rentOther ? `（${sa.rentOther}）` : "")));
+      children.push(lv("一番大事なこと", sa.priority + (sa.priorityOther ? `（${sa.priorityOther}）` : "")));
+      children.push(lv("仕事一筋度", `${sa.workDedication}/5`));
+      children.push(lv("希望年収", sa.desiredIncome + (sa.desiredIncomeOther ? `（${sa.desiredIncomeOther}）` : "")));
 
-      builder.heading("希望条件", 2);
-      builder.labelValue("企業知名度", `${sa.desiredCompanyFame}/5`);
-      builder.labelValue("勤務時間", sa.desiredWorkHours);
-      builder.labelValue("勤務地", sa.desiredLocation);
-      builder.labelValue("残業", sa.desiredOvertime);
-      builder.labelValue("職種", sa.desiredJobTypes.join("、"));
-      builder.labelValue("業種", sa.desiredIndustries.join("、"));
-      builder.labelValue("雰囲気", sa.desiredAtmosphere);
+      children.push(heading("希望条件", HeadingLevel.HEADING_2));
+      children.push(lv("企業知名度", `${sa.desiredCompanyFame}/5`));
+      children.push(lv("勤務時間", sa.desiredWorkHours));
+      children.push(lv("勤務地", sa.desiredLocation));
+      children.push(lv("残業", sa.desiredOvertime));
+      children.push(lv("職種", sa.desiredJobTypes.join("、")));
+      children.push(lv("業種", sa.desiredIndustries.join("、")));
+      children.push(lv("雰囲気", sa.desiredAtmosphere));
 
-      builder.heading("現在の状況", 2);
-      builder.labelValue("年収", sa.currentIncome + (sa.currentIncomeOther ? `（${sa.currentIncomeOther}）` : ""));
-      builder.labelValue("企業知名度", `${sa.currentCompanyFame}/5`);
-      builder.labelValue("勤務地", sa.currentLocation);
-      builder.labelValue("残業", sa.currentOvertime);
-      builder.labelValue("職種", sa.currentJobType);
-      builder.labelValue("業種", sa.currentIndustry);
-      builder.labelValue("雰囲気", sa.currentAtmosphere);
+      children.push(heading("現在の状況", HeadingLevel.HEADING_2));
+      children.push(lv("年収", sa.currentIncome + (sa.currentIncomeOther ? `（${sa.currentIncomeOther}）` : "")));
+      children.push(lv("企業知名度", `${sa.currentCompanyFame}/5`));
+      children.push(lv("勤務地", sa.currentLocation));
+      children.push(lv("残業", sa.currentOvertime));
+      children.push(lv("職種", sa.currentJobType));
+      children.push(lv("業種", sa.currentIndustry));
+      children.push(lv("雰囲気", sa.currentAtmosphere));
 
-      builder.heading("転職改善ポイント", 2);
-      builder.bullet(`1位: ${sa.improvement1}${sa.improvement1Other ? `（${sa.improvement1Other}）` : ""}`);
-      builder.bullet(`2位: ${sa.improvement2}${sa.improvement2Other ? `（${sa.improvement2Other}）` : ""}`);
-      builder.bullet(`3位: ${sa.improvement3}${sa.improvement3Other ? `（${sa.improvement3Other}）` : ""}`);
-      builder.bullet(`4位: ${sa.improvement4}${sa.improvement4Other ? `（${sa.improvement4Other}）` : ""}`);
-      builder.bullet(`5位: ${sa.improvement5}${sa.improvement5Other ? `（${sa.improvement5Other}）` : ""}`);
-      builder.divider();
+      children.push(heading("転職改善ポイント", HeadingLevel.HEADING_2));
+      children.push(bullet(`1位: ${sa.improvement1}`));
+      children.push(bullet(`2位: ${sa.improvement2}`));
+      children.push(bullet(`3位: ${sa.improvement3}`));
+      children.push(bullet(`4位: ${sa.improvement4}`));
+      children.push(bullet(`5位: ${sa.improvement5}`));
+      children.push(divider());
     }
 
-    // === エージェント分析 ===
+    // ===== エージェント分析 =====
     if (agent) {
-      builder.heading("エージェント向け詳細分析", 1);
-      builder.heading("エージェント所見", 2);
-      builder.paragraph(agent.agent_summary);
+      children.push(heading("エージェント向け詳細分析"));
+      children.push(heading("エージェント所見", HeadingLevel.HEADING_2));
+      children.push(p(agent.agent_summary));
 
-      for (const p of agent.detailed_career_plans) {
-        builder.heading(`${p.title}（マッチ度: ${p.match_score}点）`, 2);
-        builder.labelValue("年収", `${p.salary_range.min}〜${p.salary_range.max}${p.salary_range.unit}`);
-        builder.labelValue("難易度", p.transition_difficulty);
-        builder.paragraph(p.detailed_description);
-        builder.labelValue("推薦理由", p.why_recommended);
+      for (const cp of agent.detailed_career_plans) {
+        children.push(
+          heading(
+            `${cp.title}（マッチ度: ${cp.match_score}点）`,
+            HeadingLevel.HEADING_2,
+          ),
+        );
+        children.push(
+          lv("年収", `${cp.salary_range.min}〜${cp.salary_range.max}${cp.salary_range.unit}`),
+        );
+        children.push(lv("難易度", cp.transition_difficulty));
+        children.push(p(cp.detailed_description));
+        children.push(lv("推薦理由", cp.why_recommended));
       }
 
-      builder.heading("スキルギャップ分析", 2);
+      children.push(heading("スキルギャップ分析", HeadingLevel.HEADING_2));
       for (const sg of agent.skill_gap_analysis) {
-        builder.bullet(`${sg.skill_name}: ${sg.current_level}→${sg.target_level} (${sg.priority}) - ${sg.improvement_method}`);
+        children.push(
+          new Paragraph({
+            spacing: { after: 60 },
+            children: [
+              new TextRun({ text: `${sg.skill_name}`, bold: true, size: 22 }),
+              new TextRun({
+                text: `  現在: ${sg.current_level} → 目標: ${sg.target_level}（優先度: ${sg.priority}）`,
+                size: 22,
+              }),
+            ],
+          }),
+        );
+        children.push(
+          new Paragraph({
+            spacing: { after: 80 },
+            indent: { left: 360 },
+            children: [
+              new TextRun({ text: `改善方法: ${sg.improvement_method}`, size: 20, color: "444444" }),
+            ],
+          }),
+        );
       }
 
-      builder.heading("市場動向", 2);
-      builder.labelValue("業界トレンド", agent.market_insights.industry_trend);
-      builder.labelValue("需要", agent.market_insights.demand_level);
-      builder.labelValue("競争", agent.market_insights.competition_level);
-      builder.labelValue("見通し", agent.market_insights.future_outlook);
+      children.push(heading("市場動向", HeadingLevel.HEADING_2));
+      children.push(lv("業界トレンド", agent.market_insights.industry_trend));
+      children.push(lv("需要", agent.market_insights.demand_level));
+      children.push(lv("競争", agent.market_insights.competition_level));
+      children.push(lv("見通し", agent.market_insights.future_outlook));
 
-      builder.heading("年収交渉", 2);
-      builder.labelValue("市場レンジ", `${agent.salary_negotiation.current_market_range.min}〜${agent.salary_negotiation.current_market_range.max}万円`);
-      builder.paragraph("交渉ポイント:", true);
-      for (const p of agent.salary_negotiation.negotiation_points) {
-        builder.bullet(p);
+      children.push(heading("年収交渉", HeadingLevel.HEADING_2));
+      children.push(
+        lv(
+          "市場レンジ",
+          `${agent.salary_negotiation.current_market_range.min}〜${agent.salary_negotiation.current_market_range.max}万円`,
+        ),
+      );
+      children.push(p("交渉ポイント:", true));
+      for (const np of agent.salary_negotiation.negotiation_points) {
+        children.push(bullet(np));
       }
-      builder.divider();
+      children.push(divider());
     }
 
-    // === 詳細プラン ===
+    // ===== 詳細プラン =====
     if (plan) {
-      builder.heading("詳細キャリア・人生プラン", 1);
+      children.push(heading("詳細キャリア・人生プラン"));
 
-      builder.heading("パーソナルプロフィール", 2);
-      builder.paragraph(plan.personalProfile.summary);
-      builder.labelValue("コア強み", plan.personalProfile.coreStrengths.join("、"));
-      builder.labelValue("パーソナリティ", plan.personalProfile.personalityType);
-      builder.labelValue("適した働き方", plan.personalProfile.workStyle);
+      children.push(heading("パーソナルプロフィール", HeadingLevel.HEADING_2));
+      children.push(p(plan.personalProfile.summary));
+      children.push(lv("コア強み", plan.personalProfile.coreStrengths.join("、")));
+      children.push(lv("パーソナリティ", plan.personalProfile.personalityType));
+      children.push(lv("適した働き方", plan.personalProfile.workStyle));
 
-      builder.heading("キャリア戦略", 2);
+      children.push(heading("キャリア戦略", HeadingLevel.HEADING_2));
       for (const key of ["shortTerm", "midTerm", "longTerm"] as const) {
         const s = plan.careerStrategy[key];
         const labels = { shortTerm: "短期", midTerm: "中期", longTerm: "長期" };
-        builder.paragraph(`【${labels[key]}】${s.period}`, true);
-        builder.paragraph("目標:", true);
-        for (const g of s.goals) builder.bullet(g);
-        builder.paragraph("アクション:", true);
-        for (const a of s.actions) builder.bullet(a);
+        children.push(
+          new Paragraph({
+            spacing: { before: 160, after: 80 },
+            children: [
+              new TextRun({
+                text: `【${labels[key]}】${s.period}`,
+                bold: true,
+                size: 24,
+                color: "4472C4",
+              }),
+            ],
+          }),
+        );
+        children.push(p("目標:", true));
+        for (const g of s.goals) children.push(bullet(g));
+        children.push(p("アクション:", true));
+        for (const a of s.actions) children.push(bullet(a));
       }
 
-      builder.heading("ライフプラン", 2);
-      builder.labelValue("経済面", plan.lifePlan.financialPlan);
-      builder.labelValue("家庭", plan.lifePlan.familyPlan);
-      builder.labelValue("ライフスタイル", plan.lifePlan.lifestyleAdvice);
-      builder.labelValue("バランス", plan.lifePlan.balanceStrategy);
+      children.push(heading("ライフプラン", HeadingLevel.HEADING_2));
+      children.push(lv("経済面", plan.lifePlan.financialPlan));
+      children.push(lv("家庭", plan.lifePlan.familyPlan));
+      children.push(lv("ライフスタイル", plan.lifePlan.lifestyleAdvice));
+      children.push(lv("バランス", plan.lifePlan.balanceStrategy));
 
-      builder.heading("ギャップ分析", 2);
+      children.push(heading("ギャップ分析", HeadingLevel.HEADING_2));
       for (const g of plan.gapAnalysis.currentVsDesired) {
-        builder.paragraph(`${g.area}`, true);
-        builder.labelValue("現在", g.current);
-        builder.labelValue("希望", g.desired);
-        builder.labelValue("アクション", g.action);
+        children.push(
+          new Paragraph({
+            spacing: { before: 80, after: 40 },
+            children: [
+              new TextRun({ text: `${g.area}`, bold: true, size: 22 }),
+            ],
+          }),
+        );
+        children.push(
+          new Paragraph({
+            spacing: { after: 40 },
+            indent: { left: 360 },
+            children: [
+              new TextRun({ text: "現在: ", bold: true, size: 20 }),
+              new TextRun({ text: g.current, size: 20 }),
+              new TextRun({ text: "  →  希望: ", bold: true, size: 20 }),
+              new TextRun({ text: g.desired, size: 20 }),
+            ],
+          }),
+        );
+        children.push(
+          new Paragraph({
+            spacing: { after: 60 },
+            indent: { left: 360 },
+            children: [
+              new TextRun({ text: "アクション: ", bold: true, size: 20 }),
+              new TextRun({ text: g.action, size: 20 }),
+            ],
+          }),
+        );
       }
 
-      builder.heading("総合所見", 2);
-      builder.paragraph(plan.overallSummary);
+      children.push(heading("推奨職種", HeadingLevel.HEADING_2));
+      for (const j of plan.detailedRecommendations.jobRecommendations) {
+        children.push(
+          new Paragraph({
+            spacing: { before: 80, after: 40 },
+            children: [
+              new TextRun({ text: `${j.title}`, bold: true, size: 22 }),
+              new TextRun({ text: `（年収: ${j.salary} / 適合度: ${j.fit}）`, size: 20, color: "555555" }),
+            ],
+          }),
+        );
+        children.push(
+          new Paragraph({
+            spacing: { after: 60 },
+            indent: { left: 360 },
+            children: [
+              new TextRun({ text: j.reason, size: 20 }),
+            ],
+          }),
+        );
+      }
+
+      children.push(heading("総合所見", HeadingLevel.HEADING_2));
+      children.push(p(plan.overallSummary));
     }
 
-    // リクエスト送信
-    if (builder.requests.length > 0) {
-      await docsApi.documents.batchUpdate({
-        documentId,
-        requestBody: { requests: builder.requests },
-      });
-    }
-
-    // 共有設定
-    await drive.permissions.create({
-      fileId: documentId,
-      requestBody: {
-        role: "reader",
-        type: "anyone",
-      },
+    // ===== ドキュメント生成 =====
+    const doc = new Document({
+      sections: [{ children }],
     });
 
-    const url = `https://docs.google.com/document/d/${documentId}`;
-    return NextResponse.json({ url });
+    const buffer = await Packer.toBuffer(doc);
+    const uint8 = new Uint8Array(buffer);
+    const fileName = `${name}_求職者情報_${dateStr}.docx`;
+
+    return new NextResponse(uint8, {
+      status: 200,
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      },
+    });
   } catch (err) {
-    console.error("Google Docs export error:", err);
+    console.error("Word export error:", err);
     return NextResponse.json(
-      { error: "ドキュメントの作成に失敗しました。" },
+      { error: "Wordドキュメントの作成に失敗しました。" },
       { status: 500 },
     );
   }
