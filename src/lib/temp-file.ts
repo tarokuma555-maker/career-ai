@@ -24,7 +24,6 @@ export async function storeTempFile(
   buffer: Uint8Array | Buffer,
   fileName: string,
   mimeType: string,
-  googleType: "document" | "spreadsheets",
 ): Promise<{ fileUrl: string; googleUrl: string }> {
   const id = nanoid(16);
   const data = Buffer.from(buffer).toString("base64");
@@ -38,8 +37,8 @@ export async function storeTempFile(
   const origin = getOrigin();
   const fileUrl = `${origin}/api/export/temp/${id}`;
 
-  // Google Docs/Sheets で直接開く URL
-  const googleUrl = `https://docs.google.com/${googleType}/d/?url=${encodeURIComponent(fileUrl)}`;
+  // Google Viewer で開く URL（.docx / .xlsx を表示し、Google Docs/Sheets で開くオプションあり）
+  const googleUrl = `https://docs.google.com/gview?url=${encodeURIComponent(fileUrl)}`;
 
   return { fileUrl, googleUrl };
 }

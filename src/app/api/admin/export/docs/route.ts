@@ -462,7 +462,6 @@ export async function POST(request: NextRequest) {
       uint8,
       fileName,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "document",
     );
 
     return NextResponse.json({ url: googleUrl, type: "google_docs" });

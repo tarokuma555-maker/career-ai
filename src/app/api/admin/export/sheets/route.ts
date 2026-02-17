@@ -509,7 +509,6 @@ export async function POST(request: NextRequest) {
       uint8,
       fileName,
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "spreadsheets",
     );
 
     return NextResponse.json({ url: googleUrl, type: "google_sheets" });
