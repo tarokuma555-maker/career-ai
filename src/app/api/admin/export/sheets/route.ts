@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { kv } from "@vercel/kv";
 import type { StoredDiagnosis } from "@/lib/agent-types";
+import { storeTempFile } from "@/lib/temp-file";
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
@@ -504,13 +505,14 @@ export async function POST(request: NextRequest) {
     const uint8 = new Uint8Array(buffer);
     const fileName = `${name}_求職者情報_${dateStr}.xlsx`;
 
-    return new NextResponse(uint8, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-      },
-    });
+    const { googleUrl } = await storeTempFile(
+      uint8,
+      fileName,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "spreadsheets",
+    );
+
+    return NextResponse.json({ url: googleUrl, type: "google_sheets" });
   } catch (err) {
     console.error("Excel export error:", err);
     return NextResponse.json(

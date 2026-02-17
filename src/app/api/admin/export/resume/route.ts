@@ -10,6 +10,7 @@ import {
 import { kv } from "@vercel/kv";
 import OpenAI from "openai";
 import type { StoredDiagnosis } from "@/lib/agent-types";
+import { storeTempFile } from "@/lib/temp-file";
 
 export const maxDuration = 60;
 
@@ -425,11 +426,12 @@ export async function POST(request: NextRequest) {
   const uint8 = new Uint8Array(buffer);
   const fileName = `職務経歴書_${name}_${date}.docx`;
 
-  return new NextResponse(uint8, {
-    status: 200,
-    headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-    },
-  });
+  const { googleUrl } = await storeTempFile(
+    uint8,
+    fileName,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "document",
+  );
+
+  return NextResponse.json({ url: googleUrl, type: "google_docs" });
 }

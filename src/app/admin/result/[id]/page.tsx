@@ -53,7 +53,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import PageTransition from "@/components/PageTransition";
 import AIThinking from "@/components/AIThinking";
-import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import type { CareerPath } from "@/lib/types";
 import type {
   StoredDiagnosis,
@@ -200,8 +199,6 @@ export default function AdminResultPage() {
     summaryMode: "ai" as "ai" | "manual",
     summaryManual: "",
   });
-  const { getAccessToken } = useGoogleAuth();
-
   // モーダル初期化
   useEffect(() => {
     if (showResumeModal && stored) {
@@ -311,7 +308,6 @@ export default function AdminResultPage() {
     setExportError(null);
 
     try {
-      // 1. サーバーで .docx を生成
       const res = await fetch("/api/admin/export/resume", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -331,65 +327,18 @@ export default function AdminResultPage() {
         const data = await res.json();
         throw new Error(data.error);
       }
-      const blob = await res.blob();
 
-      // 2. ファイル名を取得
-      const disposition = res.headers.get("Content-Disposition") || "";
-      const nameMatch = disposition.match(/filename\*=UTF-8''(.+)/);
-      const rawName = nameMatch ? decodeURIComponent(nameMatch[1]) : "職務経歴書.docx";
-      const displayName = rawName.replace(/\.docx$/, "");
-
-      // 3. Google 認証 → Drive にアップロード
-      let token: string | null = null;
-      try {
-        token = await getAccessToken();
-      } catch {
-        // 認証失敗 → 直接ダウンロード
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = rawName;
-        document.body.appendChild(a); a.click();
-        document.body.removeChild(a); URL.revokeObjectURL(url);
-        setExportedUrl({ url: "", type: "職務経歴書（ダウンロード済み）" });
-        setShowResumeModal(false);
-        return;
-      }
-
-      const boundary = "---career_ai_resume_" + Date.now();
-      const metadata = JSON.stringify({ name: displayName, mimeType: "application/vnd.google-apps.document" });
-      const uploadBody = new Blob([
-        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
-        metadata,
-        `\r\n--${boundary}\r\nContent-Type: ${blob.type}\r\n\r\n`,
-        blob,
-        `\r\n--${boundary}--`,
-      ]);
-
-      const uploadRes = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
-          body: uploadBody,
-        },
-      );
-
-      if (!uploadRes.ok) {
-        const errData = await uploadRes.json();
-        throw new Error(errData.error?.message || "Google Driveへのアップロードに失敗しました");
-      }
-
-      const file = await uploadRes.json();
-      setExportedUrl({ url: `https://docs.google.com/document/d/${file.id}/edit`, type: "Google ドキュメント（職務経歴書）" });
+      const data = await res.json();
+      setExportedUrl({ url: data.url, type: "Google ドキュメント（職務経歴書）" });
       setShowResumeModal(false);
     } catch (err) {
       setExportError(err instanceof Error ? err.message : "職務経歴書の作成に失敗しました");
     } finally {
       setIsExportingResume(false);
     }
-  }, [diagnosisId, resumeForm, getAccessToken]);
+  }, [diagnosisId, resumeForm]);
 
-  // エクスポート（Google Drive にアップロード → Google Sheets/Docs で新しいタブで開く）
+  // エクスポート（サーバーでファイル生成 → Google Docs/Sheets で開く）
   const handleExport = useCallback(async (type: "sheets" | "docs") => {
     const setLoading = type === "sheets" ? setIsExportingSheets : setIsExportingDocs;
     setLoading(true);
@@ -397,7 +346,6 @@ export default function AdminResultPage() {
     setExportError(null);
 
     try {
-      // 1. サーバーで .xlsx/.docx を生成
       const res = await fetch(`/api/admin/export/${type}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -407,91 +355,16 @@ export default function AdminResultPage() {
         const data = await res.json();
         throw new Error(data.error);
       }
-      const blob = await res.blob();
 
-      // 2. ファイル名を取得
-      const disposition = res.headers.get("Content-Disposition") || "";
-      const nameMatch = disposition.match(/filename\*=UTF-8''(.+)/);
-      const rawName = nameMatch
-        ? decodeURIComponent(nameMatch[1])
-        : `export.${type === "sheets" ? "xlsx" : "docx"}`;
-      const displayName = rawName.replace(/\.(xlsx|docx)$/, "");
-
-      // 3. Google 認証を試みる（失敗した場合は直接ダウンロード）
-      let token: string | null = null;
-      try {
-        token = await getAccessToken();
-      } catch {
-        // 認証失敗（モバイルでポップアップブロック等）→ 直接ダウンロード
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = rawName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        const label = type === "sheets" ? "スプレッドシート" : "ドキュメント";
-        setExportedUrl({ url: "", type: `${label}（ダウンロード済み）` });
-        return;
-      }
-
-      // 4. Google Drive にアップロード（Google 形式に自動変換）
-      const googleMimeType =
-        type === "sheets"
-          ? "application/vnd.google-apps.spreadsheet"
-          : "application/vnd.google-apps.document";
-
-      const boundary = "---career_ai_" + Date.now();
-      const metadata = JSON.stringify({
-        name: displayName,
-        mimeType: googleMimeType,
-      });
-
-      const uploadBody = new Blob([
-        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
-        metadata,
-        `\r\n--${boundary}\r\nContent-Type: ${blob.type}\r\n\r\n`,
-        blob,
-        `\r\n--${boundary}--`,
-      ]);
-
-      const uploadRes = await fetch(
-        "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": `multipart/related; boundary=${boundary}`,
-          },
-          body: uploadBody,
-        },
-      );
-
-      if (!uploadRes.ok) {
-        const errData = await uploadRes.json();
-        throw new Error(
-          errData.error?.message || "Google Driveへのアップロードに失敗しました",
-        );
-      }
-
-      const file = await uploadRes.json();
-
-      // 5. Google Sheets / Docs の URL を生成
-      const baseUrl =
-        type === "sheets"
-          ? "https://docs.google.com/spreadsheets/d/"
-          : "https://docs.google.com/document/d/";
-      const fileUrl = `${baseUrl}${file.id}/edit`;
+      const data = await res.json();
       const label = type === "sheets" ? "Google スプレッドシート" : "Google ドキュメント";
-
-      setExportedUrl({ url: fileUrl, type: label });
+      setExportedUrl({ url: data.url, type: label });
     } catch (err) {
       setExportError(err instanceof Error ? err.message : "エクスポートに失敗しました");
     } finally {
       setLoading(false);
     }
-  }, [diagnosisId, getAccessToken]);
+  }, [diagnosisId]);
 
   const togglePlan = (i: number) => {
     setExpandedPlans((prev) => {
