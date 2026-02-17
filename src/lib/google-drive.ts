@@ -11,38 +11,42 @@ const SCOPES = "https://www.googleapis.com/auth/drive.file";
  * PEM 形式の解析に失敗した場合は DER 形式でのインポートにフォールバックする。
  */
 function parsePrivateKey(raw: string): crypto.KeyObject {
-  let pem = raw.trim();
+  let key = raw.trim();
 
   // 囲み引用符を除去（JSON からコピペした場合）
   if (
-    (pem.startsWith('"') && pem.endsWith('"')) ||
-    (pem.startsWith("'") && pem.endsWith("'"))
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
   ) {
-    pem = pem.slice(1, -1);
+    key = key.slice(1, -1);
   }
 
   // リテラル \n → 実際の改行に変換
-  pem = pem.replace(/\\n/g, "\n");
+  key = key.replace(/\\n/g, "\n").trim();
 
-  if (!pem.includes("-----BEGIN PRIVATE KEY-----")) {
-    throw new Error(
-      `秘密鍵のフォーマットが不正です（先頭: "${pem.substring(0, 30)}..."）`,
-    );
+  // PEM ヘッダーがある場合
+  if (key.includes("-----BEGIN PRIVATE KEY-----")) {
+    // 方法1: PEM 文字列としてパース
+    try {
+      return crypto.createPrivateKey(key);
+    } catch {
+      // PEM 解析失敗 → Base64 抽出して DER でインポート
+    }
+
+    const b64 = key
+      .replace(/-----BEGIN PRIVATE KEY-----/, "")
+      .replace(/-----END PRIVATE KEY-----/, "")
+      .replace(/\s+/g, "");
+
+    return crypto.createPrivateKey({
+      key: Buffer.from(b64, "base64"),
+      format: "der",
+      type: "pkcs8",
+    });
   }
 
-  // 方法1: PEM 文字列としてパース
-  try {
-    return crypto.createPrivateKey(pem);
-  } catch {
-    // PEM 解析失敗 → DER フォールバック
-  }
-
-  // 方法2: Base64 データを抽出して DER としてインポート
-  const b64 = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/, "")
-    .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\s+/g, "");
-
+  // PEM ヘッダーがない場合 → 生の Base64 データとして扱う
+  const b64 = key.replace(/\s+/g, "");
   return crypto.createPrivateKey({
     key: Buffer.from(b64, "base64"),
     format: "der",
