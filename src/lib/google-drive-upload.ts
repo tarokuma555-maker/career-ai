@@ -43,7 +43,6 @@ async function cleanupOldFiles(
     await Promise.allSettled(
       files.map((f) => (f.id ? drive.files.delete({ fileId: f.id }) : Promise.resolve())),
     );
-    // ゴミ箱も空にする
     if (files.length > 0) {
       await drive.files.emptyTrash().catch(() => {});
     }
@@ -52,14 +51,31 @@ async function cleanupOldFiles(
   }
 }
 
+/** Google MIME タイプに対応する直接編集 URL を生成 */
+function buildEditUrl(fileId: string, targetMime: string): string {
+  if (targetMime === "application/vnd.google-apps.spreadsheet") {
+    return `https://docs.google.com/spreadsheets/d/${fileId}/edit`;
+  }
+  if (targetMime === "application/vnd.google-apps.document") {
+    return `https://docs.google.com/document/d/${fileId}/edit`;
+  }
+  return `https://drive.google.com/file/d/${fileId}/view`;
+}
+
+/** ファイル名から拡張子を除去（Google ネイティブ形式では不要） */
+function removeExtension(name: string): string {
+  return name.replace(/\.(xlsx|docx|pptx|pdf)$/i, "");
+}
+
 /**
- * ファイルを Google Drive にアップロードし、Google 形式に変換して共有リンクを返す。
+ * ファイルを Google Drive にアップロードし、Google 形式に変換して
+ * Google Docs / Sheets の直接編集 URL を返す。
  *
  * @param buffer       アップロードするファイルデータ
- * @param fileName     ファイル名
+ * @param fileName     ファイル名（拡張子は自動除去）
  * @param sourceMime   元ファイルの MIME タイプ
  * @param targetMime   変換先の Google 形式 MIME タイプ
- * @returns Google ファイルの URL（直接開ける）
+ * @returns Google Docs/Sheets の直接編集 URL
  */
 export async function uploadToGoogleDrive(
   buffer: Buffer | Uint8Array,
@@ -73,17 +89,20 @@ export async function uploadToGoogleDrive(
   // 事前クリーンアップ
   await cleanupOldFiles(drive);
 
+  // ファイル名から拡張子を除去（Google 形式では不要）
+  const cleanName = removeExtension(fileName);
+
   // アップロード＋Google 形式に変換
   const file = await drive.files.create({
     requestBody: {
-      name: fileName,
-      mimeType: targetMime, // 変換先 (e.g. application/vnd.google-apps.spreadsheet)
+      name: cleanName,
+      mimeType: targetMime,
     },
     media: {
       mimeType: sourceMime,
       body: Readable.from(Buffer.from(buffer)),
     },
-    fields: "id, webViewLink",
+    fields: "id",
   });
 
   const fileId = file.data.id;
@@ -91,17 +110,14 @@ export async function uploadToGoogleDrive(
     throw new Error("Google Drive へのファイル作成に失敗しました。");
   }
 
-  // リンクを知っている全員が閲覧可能に
+  // リンクを知っている全員が編集可能に（Google ログインは必要）
   await drive.permissions.create({
     fileId,
     requestBody: {
-      role: "reader",
+      role: "writer",
       type: "anyone",
     },
   });
 
-  return (
-    file.data.webViewLink ||
-    `https://drive.google.com/file/d/${fileId}/view`
-  );
+  return buildEditUrl(fileId, targetMime);
 }
