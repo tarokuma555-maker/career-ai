@@ -324,8 +324,10 @@ export default function AdminResultPage() {
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error);
+        const text = await res.text();
+        let msg = "職務経歴書の作成に失敗しました";
+        try { msg = JSON.parse(text).error || msg; } catch { if (text) msg = text; }
+        throw new Error(msg);
       }
 
       const data = await res.json();
@@ -352,8 +354,10 @@ export default function AdminResultPage() {
         body: JSON.stringify({ diagnosisId }),
       });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error);
+        const text = await res.text();
+        let msg = "エクスポートに失敗しました";
+        try { msg = JSON.parse(text).error || msg; } catch { if (text) msg = text; }
+        throw new Error(msg);
       }
 
       const data = await res.json();
