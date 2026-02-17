@@ -10,7 +10,7 @@ import {
 } from "docx";
 import { kv } from "@vercel/kv";
 import type { StoredDiagnosis } from "@/lib/agent-types";
-import { storeTempFile } from "@/lib/temp-file";
+import { uploadToGoogleDrive } from "@/lib/google-drive-upload";
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
@@ -458,13 +458,14 @@ export async function POST(request: NextRequest) {
     const uint8 = new Uint8Array(buffer);
     const fileName = `${name}_求職者情報_${dateStr}.docx`;
 
-    const { googleUrl } = await storeTempFile(
+    const url = await uploadToGoogleDrive(
       uint8,
       fileName,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.google-apps.document",
     );
 
-    return NextResponse.json({ url: googleUrl, type: "google_docs" });
+    return NextResponse.json({ url, type: "google_docs" });
   } catch (err) {
     console.error("Word export error:", err);
     return NextResponse.json(
