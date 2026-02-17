@@ -1,19 +1,14 @@
 import crypto from "crypto";
 
 const TOKEN_URI = "https://oauth2.googleapis.com/token";
-const SCOPES = "https://www.googleapis.com/auth/drive.file";
+const SCOPES = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive";
 
 // ---------- 秘密鍵の解析 ----------
 
-/**
- * 環境変数から取得した秘密鍵をパースする。
- * Vercel では \n がリテラル文字列として保存される場合があるため、
- * PEM 形式の解析に失敗した場合は DER 形式でのインポートにフォールバックする。
- */
 function parsePrivateKey(raw: string): crypto.KeyObject {
   let key = raw.trim();
 
-  // 囲み引用符を除去（JSON からコピペした場合）
+  // 囲み引用符を除去
   if (
     (key.startsWith('"') && key.endsWith('"')) ||
     (key.startsWith("'") && key.endsWith("'"))
@@ -26,11 +21,10 @@ function parsePrivateKey(raw: string): crypto.KeyObject {
 
   // PEM ヘッダーがある場合
   if (key.includes("-----BEGIN PRIVATE KEY-----")) {
-    // 方法1: PEM 文字列としてパース
     try {
       return crypto.createPrivateKey(key);
     } catch {
-      // PEM 解析失敗 → Base64 抽出して DER でインポート
+      // PEM 解析失敗 → DER フォールバック
     }
 
     const b64 = key
@@ -59,7 +53,6 @@ function parsePrivateKey(raw: string): crypto.KeyObject {
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 async function getAccessToken(): Promise<string> {
-  // キャッシュが有効ならそのまま返す
   if (cachedToken && Date.now() < cachedToken.expiresAt) {
     return cachedToken.token;
   }
@@ -112,21 +105,56 @@ async function getAccessToken(): Promise<string> {
   return data.access_token;
 }
 
-// ---------- Google Drive アップロード ----------
+// ---------- ストレージ解放 ----------
 
 /**
- * ファイルを Google Drive にアップロードし、Google 形式に変換する。
- * 共有設定（リンクを知っている全員が編集可）を適用し、ファイルIDを返す。
+ * サービスアカウントが所有する古いファイルをすべて削除してストレージを解放する。
+ * ゴミ箱も空にする。
  */
-export async function uploadToGoogleDrive(
+async function freeUpStorage(token: string): Promise<void> {
+  // 1. ゴミ箱を空にする
+  try {
+    await fetch("https://www.googleapis.com/drive/v3/files/trash", {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch { /* ignore */ }
+
+  // 2. 所有ファイルを一覧して削除
+  try {
+    const listRes = await fetch(
+      "https://www.googleapis.com/drive/v3/files?q=%27me%27+in+owners&fields=files(id)&pageSize=200",
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!listRes.ok) return;
+
+    const data = await listRes.json();
+    const files: { id: string }[] = data.files || [];
+
+    // 並列で削除（最大20件ずつ）
+    for (let i = 0; i < files.length; i += 20) {
+      const batch = files.slice(i, i + 20);
+      await Promise.allSettled(
+        batch.map((f) =>
+          fetch(`https://www.googleapis.com/drive/v3/files/${f.id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ),
+      );
+    }
+  } catch { /* ignore */ }
+}
+
+// ---------- Google Drive アップロード ----------
+
+async function doUpload(
+  token: string,
   buffer: Buffer | Uint8Array,
   fileName: string,
   sourceMimeType: string,
   targetGoogleMimeType: string,
-): Promise<string> {
-  const token = await getAccessToken();
-
-  // マルチパートアップロード
+): Promise<{ id: string } | { error: string }> {
   const boundary = "---career_ai_upload_" + Date.now();
   const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
   const metadata = JSON.stringify({
@@ -135,22 +163,14 @@ export async function uploadToGoogleDrive(
     ...(folderId && { parents: [folderId] }),
   });
 
-  const parts = [
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
-    metadata,
-    `\r\n--${boundary}\r\nContent-Type: ${sourceMimeType}\r\n\r\n`,
-  ];
-
-  // バイナリデータを含むマルチパートボディを構築
   const encoder = new TextEncoder();
-  const prefix = encoder.encode(parts.join(""));
+  const prefix = encoder.encode(
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${sourceMimeType}\r\n\r\n`,
+  );
   const suffix = encoder.encode(`\r\n--${boundary}--`);
   const body = new Uint8Array(prefix.length + buffer.length + suffix.length);
   body.set(prefix, 0);
-  body.set(
-    buffer instanceof Buffer ? new Uint8Array(buffer) : buffer,
-    prefix.length,
-  );
+  body.set(buffer instanceof Buffer ? new Uint8Array(buffer) : buffer, prefix.length);
   body.set(suffix, prefix.length + buffer.length);
 
   const uploadRes = await fetch(
@@ -167,16 +187,44 @@ export async function uploadToGoogleDrive(
 
   if (!uploadRes.ok) {
     const err = await uploadRes.json();
-    throw new Error(
-      err.error?.message || "Google Driveへのアップロードに失敗しました",
-    );
+    return { error: err.error?.message || "upload failed" };
   }
 
-  const file = await uploadRes.json();
+  return uploadRes.json();
+}
+
+/**
+ * ファイルを Google Drive にアップロードし、Google 形式に変換する。
+ * ストレージ不足の場合は古いファイルを削除してリトライする。
+ */
+export async function uploadToGoogleDrive(
+  buffer: Buffer | Uint8Array,
+  fileName: string,
+  sourceMimeType: string,
+  targetGoogleMimeType: string,
+): Promise<string> {
+  const token = await getAccessToken();
+
+  // 1回目のアップロード試行
+  let result = await doUpload(token, buffer, fileName, sourceMimeType, targetGoogleMimeType);
+
+  // ストレージ不足の場合、古いファイルを削除してリトライ
+  if ("error" in result && result.error.includes("quota")) {
+    console.log("Storage quota exceeded, cleaning up old files...");
+    await freeUpStorage(token);
+
+    result = await doUpload(token, buffer, fileName, sourceMimeType, targetGoogleMimeType);
+  }
+
+  if ("error" in result) {
+    throw new Error(result.error);
+  }
+
+  const fileId = result.id;
 
   // 共有設定: リンクを知っている全員が編集可
   await fetch(
-    `https://www.googleapis.com/drive/v3/files/${file.id}/permissions`,
+    `https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
     {
       method: "POST",
       headers: {
@@ -187,5 +235,5 @@ export async function uploadToGoogleDrive(
     },
   );
 
-  return file.id as string;
+  return fileId;
 }

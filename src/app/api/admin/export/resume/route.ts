@@ -426,7 +426,7 @@ export async function POST(request: NextRequest) {
   const uint8 = new Uint8Array(buffer);
   const displayName = `職務経歴書_${name}_${date}`;
 
-  // Google Drive にアップロード
+  // Google Drive にアップロードを試みる
   try {
     const fileId = await uploadToGoogleDrive(
       uint8,
@@ -439,11 +439,16 @@ export async function POST(request: NextRequest) {
       type: "google_docs",
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("Google Drive upload failed:", msg);
-    return NextResponse.json(
-      { error: `Google Driveへのアップロードに失敗しました: ${msg}` },
-      { status: 500 },
-    );
+    console.warn("Google Drive upload failed, falling back to download:", err instanceof Error ? err.message : err);
   }
+
+  // フォールバック: .docx バイナリを返す
+  const fileName = `${displayName}.docx`;
+  return new NextResponse(uint8, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    },
+  });
 }
