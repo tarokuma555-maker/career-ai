@@ -504,9 +504,8 @@ export async function POST(request: NextRequest) {
     const buffer = await wb.xlsx.writeBuffer();
     const uint8 = new Uint8Array(buffer);
     const displayName = `${name}_求職者情報_${dateStr}`;
-    const fileName = `${displayName}.xlsx`;
 
-    // Google Drive にアップロードを試みる
+    // Google Drive にアップロード
     try {
       const fileId = await uploadToGoogleDrive(
         uint8,
@@ -519,18 +518,13 @@ export async function POST(request: NextRequest) {
         type: "google_sheets",
       });
     } catch (driveErr) {
-      console.warn("Google Drive upload skipped:", driveErr instanceof Error ? driveErr.message : driveErr);
+      const msg = driveErr instanceof Error ? driveErr.message : String(driveErr);
+      console.error("Google Drive upload failed:", msg);
+      return NextResponse.json(
+        { error: `Google Driveへのアップロードに失敗しました: ${msg}` },
+        { status: 500 },
+      );
     }
-
-    // フォールバック: .xlsx バイナリを返す
-    return new NextResponse(uint8, {
-      status: 200,
-      headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-      },
-    });
   } catch (err) {
     console.error("Excel export error:", err);
     return NextResponse.json(
