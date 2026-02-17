@@ -25,7 +25,7 @@ async function getAccessToken(): Promise<string> {
 
   if (!email || !rawKey) {
     throw new Error(
-      "Google サービスアカウントの認証情報が設定されていません。",
+      "GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY が未設定です。",
     );
   }
 
@@ -55,7 +55,7 @@ async function getAccessToken(): Promise<string> {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Google 認証に失敗しました: ${text}`);
+    throw new Error(`Google認証失敗: ${text}`);
   }
 
   const data = await res.json();
@@ -122,23 +122,29 @@ export async function uploadToGoogleDrive(
 
   const cleanName = removeExtension(fileName);
 
-  // マルチパートアップロード
-  const boundary = "----CareerAIBoundary" + Date.now();
+  // マルチパートアップロード（バイナリを直接送信）
+  const boundary = "CareerAIBoundary" + Date.now();
   const metadata = JSON.stringify({ name: cleanName, mimeType: targetMime });
-
   const CRLF = "\r\n";
-  const parts = [
-    `--${boundary}${CRLF}`,
-    `Content-Type: application/json; charset=UTF-8${CRLF}${CRLF}`,
-    metadata,
-    `${CRLF}--${boundary}${CRLF}`,
-    `Content-Type: ${sourceMime}${CRLF}`,
-    `Content-Transfer-Encoding: base64${CRLF}${CRLF}`,
-    Buffer.from(buffer).toString("base64"),
-    `${CRLF}--${boundary}--`,
-  ];
 
-  const body = parts.join("");
+  // パート1: JSON メタデータ
+  const part1 = Buffer.from(
+    `--${boundary}${CRLF}` +
+    `Content-Type: application/json; charset=UTF-8${CRLF}${CRLF}` +
+    metadata + CRLF,
+  );
+
+  // パート2: ファイルバイナリ（生データ）
+  const part2Header = Buffer.from(
+    `--${boundary}${CRLF}` +
+    `Content-Type: ${sourceMime}${CRLF}${CRLF}`,
+  );
+
+  const part2Footer = Buffer.from(`${CRLF}--${boundary}--`);
+
+  // バイナリデータを含む完全なボディを構築
+  const fileBuffer = Buffer.from(buffer);
+  const body = Buffer.concat([part1, part2Header, fileBuffer, part2Footer]);
 
   const uploadRes = await fetch(
     `${DRIVE_UPLOAD_URL}?uploadType=multipart&fields=id`,
@@ -147,6 +153,7 @@ export async function uploadToGoogleDrive(
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": `multipart/related; boundary=${boundary}`,
+        "Content-Length": String(body.length),
       },
       body,
     },
@@ -154,13 +161,13 @@ export async function uploadToGoogleDrive(
 
   if (!uploadRes.ok) {
     const errText = await uploadRes.text();
-    throw new Error(`Google Drive アップロードに失敗しました: ${errText}`);
+    throw new Error(`Driveアップロード失敗(${uploadRes.status}): ${errText}`);
   }
 
   const fileData = await uploadRes.json();
   const fileId = fileData.id;
   if (!fileId) {
-    throw new Error("Google Drive へのファイル作成に失敗しました。");
+    throw new Error("ファイルIDが取得できませんでした。");
   }
 
   // リンクを知っている全員が編集可能に
@@ -177,7 +184,8 @@ export async function uploadToGoogleDrive(
   );
 
   if (!permRes.ok) {
-    console.error("権限設定エラー:", await permRes.text());
+    const permErr = await permRes.text();
+    console.error("権限設定エラー:", permErr);
   }
 
   return buildEditUrl(fileId, targetMime);

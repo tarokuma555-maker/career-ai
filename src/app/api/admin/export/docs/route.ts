@@ -12,6 +12,8 @@ import { kv } from "@vercel/kv";
 import type { StoredDiagnosis } from "@/lib/agent-types";
 import { uploadToGoogleDrive } from "@/lib/google-drive-upload";
 
+export const maxDuration = 60;
+
 function formatDate(ts: number): string {
   const d = new Date(ts);
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
@@ -468,8 +470,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ url, type: "google_docs" });
   } catch (err) {
     console.error("Word export error:", err);
+    const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: "Wordドキュメントの作成に失敗しました。" },
+      { error: `ドキュメントの作成に失敗しました: ${msg}` },
       { status: 500 },
     );
   }
