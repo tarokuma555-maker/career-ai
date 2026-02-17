@@ -128,9 +128,11 @@ export async function uploadToGoogleDrive(
 
   // マルチパートアップロード
   const boundary = "---career_ai_upload_" + Date.now();
+  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
   const metadata = JSON.stringify({
     name: fileName,
     mimeType: targetGoogleMimeType,
+    ...(folderId && { parents: [folderId] }),
   });
 
   const parts = [
