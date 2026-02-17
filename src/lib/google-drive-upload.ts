@@ -12,11 +12,38 @@ function base64url(data: Buffer | string): string {
 }
 
 function parsePrivateKey(raw: string): crypto.KeyObject {
-  let pem = raw.replace(/\\n/g, "\n");
-  if (!pem.includes("-----BEGIN")) {
-    pem = `-----BEGIN PRIVATE KEY-----\n${pem.trim()}\n-----END PRIVATE KEY-----\n`;
+  // リテラル \n を改行に変換
+  let cleaned = raw.replace(/\\n/g, "\n").trim();
+
+  // 方法1: PEM ヘッダーがある場合そのまま試す
+  if (cleaned.includes("-----BEGIN")) {
+    try {
+      return crypto.createPrivateKey(cleaned);
+    } catch {
+      // ヘッダーを除去して base64 データのみ取り出す
+      cleaned = cleaned
+        .replace(/-----BEGIN .*?-----/g, "")
+        .replace(/-----END .*?-----/g, "")
+        .replace(/\s/g, "");
+    }
   }
-  return crypto.createPrivateKey(pem);
+
+  // 方法2: PEM ヘッダーを付けて試す
+  const base64Only = cleaned.replace(/\s/g, "");
+  try {
+    const pem = `-----BEGIN PRIVATE KEY-----\n${base64Only}\n-----END PRIVATE KEY-----\n`;
+    return crypto.createPrivateKey(pem);
+  } catch {
+    // continue
+  }
+
+  // 方法3: DER バッファとして直接パース（最も確実）
+  const derBuffer = Buffer.from(base64Only, "base64");
+  return crypto.createPrivateKey({
+    key: derBuffer,
+    format: "der",
+    type: "pkcs8",
+  });
 }
 
 async function getAccessToken(): Promise<string> {
