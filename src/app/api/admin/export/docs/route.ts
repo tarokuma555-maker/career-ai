@@ -10,6 +10,7 @@ import {
 } from "docx";
 import { kv } from "@vercel/kv";
 import type { StoredDiagnosis } from "@/lib/agent-types";
+import { uploadToGoogleDrive } from "@/lib/google-drive";
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
@@ -455,8 +456,26 @@ export async function POST(request: NextRequest) {
 
     const buffer = await Packer.toBuffer(doc);
     const uint8 = new Uint8Array(buffer);
-    const fileName = `${name}_求職者情報_${dateStr}.docx`;
+    const displayName = `${name}_求職者情報_${dateStr}`;
+    const fileName = `${displayName}.docx`;
 
+    // Google Drive にアップロードを試みる
+    try {
+      const fileId = await uploadToGoogleDrive(
+        uint8,
+        displayName,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.google-apps.document",
+      );
+      return NextResponse.json({
+        url: `https://docs.google.com/document/d/${fileId}/edit`,
+        type: "google_docs",
+      });
+    } catch (driveErr) {
+      console.warn("Google Drive upload skipped:", driveErr instanceof Error ? driveErr.message : driveErr);
+    }
+
+    // フォールバック: .docx バイナリを返す
     return new NextResponse(uint8, {
       status: 200,
       headers: {

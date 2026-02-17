@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { kv } from "@vercel/kv";
 import type { StoredDiagnosis } from "@/lib/agent-types";
+import { uploadToGoogleDrive } from "@/lib/google-drive";
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
@@ -502,8 +503,26 @@ export async function POST(request: NextRequest) {
     // ========== バッファに書き出し ==========
     const buffer = await wb.xlsx.writeBuffer();
     const uint8 = new Uint8Array(buffer);
-    const fileName = `${name}_求職者情報_${dateStr}.xlsx`;
+    const displayName = `${name}_求職者情報_${dateStr}`;
+    const fileName = `${displayName}.xlsx`;
 
+    // Google Drive にアップロードを試みる
+    try {
+      const fileId = await uploadToGoogleDrive(
+        uint8,
+        displayName,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.google-apps.spreadsheet",
+      );
+      return NextResponse.json({
+        url: `https://docs.google.com/spreadsheets/d/${fileId}/edit`,
+        type: "google_sheets",
+      });
+    } catch (driveErr) {
+      console.warn("Google Drive upload skipped:", driveErr instanceof Error ? driveErr.message : driveErr);
+    }
+
+    // フォールバック: .xlsx バイナリを返す
     return new NextResponse(uint8, {
       status: 200,
       headers: {
