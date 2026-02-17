@@ -59,6 +59,8 @@ import type {
   AgentAnalysisResult,
 } from "@/lib/agent-types";
 import type { DetailedLifePlan } from "@/lib/self-analysis-types";
+import { useGoogleAuth } from "@/hooks/useGoogleAuth";
+import { uploadToDriveClient } from "@/lib/client-drive-upload";
 
 // ---------- スコア表示 ----------
 function getScoreInfo(score: number) {
@@ -199,6 +201,7 @@ export default function AdminResultPage() {
     summaryMode: "ai" as "ai" | "manual",
     summaryManual: "",
   });
+  const { getAccessToken } = useGoogleAuth();
   // モーダル初期化
   useEffect(() => {
     if (showResumeModal && stored) {
@@ -308,6 +311,7 @@ export default function AdminResultPage() {
     setExportError(null);
 
     try {
+      // 1. サーバーでファイル生成
       const res = await fetch("/api/admin/export/resume", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -330,17 +334,33 @@ export default function AdminResultPage() {
         throw new Error(msg);
       }
 
-      const data = await res.json();
-      setExportedUrl({ url: data.url, type: "Google ドキュメント（職務経歴書）" });
+      const fileData = await res.json();
+
+      // 2. Google ログイン → ユーザーの Drive にアップロード
+      const token = await getAccessToken();
+      const url = await uploadToDriveClient(
+        token,
+        fileData.data,
+        fileData.fileName,
+        fileData.mimeType,
+        fileData.googleMimeType,
+      );
+
+      setExportedUrl({ url, type: "Google ドキュメント（職務経歴書）" });
       setShowResumeModal(false);
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : "職務経歴書の作成に失敗しました");
+      const msg = err instanceof Error ? err.message : "職務経歴書の作成に失敗しました";
+      if (msg === "GOOGLE_AUTH_TIMEOUT") {
+        setExportError("Google ログインがタイムアウトしました。ポップアップを許可してください。");
+      } else {
+        setExportError(msg);
+      }
     } finally {
       setIsExportingResume(false);
     }
-  }, [diagnosisId, resumeForm]);
+  }, [diagnosisId, resumeForm, getAccessToken]);
 
-  // エクスポート（サーバーでファイル生成 → Google Docs/Sheets で開く）
+  // エクスポート（サーバーでファイル生成 → Google ログイン → Drive にアップロード）
   const handleExport = useCallback(async (type: "sheets" | "docs") => {
     const setLoading = type === "sheets" ? setIsExportingSheets : setIsExportingDocs;
     setLoading(true);
@@ -348,6 +368,7 @@ export default function AdminResultPage() {
     setExportError(null);
 
     try {
+      // 1. サーバーでファイル生成
       const res = await fetch(`/api/admin/export/${type}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -360,15 +381,31 @@ export default function AdminResultPage() {
         throw new Error(msg);
       }
 
-      const data = await res.json();
+      const fileData = await res.json();
+
+      // 2. Google ログイン → ユーザーの Drive にアップロード
+      const token = await getAccessToken();
+      const url = await uploadToDriveClient(
+        token,
+        fileData.data,
+        fileData.fileName,
+        fileData.mimeType,
+        fileData.googleMimeType,
+      );
+
       const label = type === "sheets" ? "Google スプレッドシート" : "Google ドキュメント";
-      setExportedUrl({ url: data.url, type: label });
+      setExportedUrl({ url, type: label });
     } catch (err) {
-      setExportError(err instanceof Error ? err.message : "エクスポートに失敗しました");
+      const msg = err instanceof Error ? err.message : "エクスポートに失敗しました";
+      if (msg === "GOOGLE_AUTH_TIMEOUT") {
+        setExportError("Google ログインがタイムアウトしました。ポップアップを許可してください。");
+      } else {
+        setExportError(msg);
+      }
     } finally {
       setLoading(false);
     }
-  }, [diagnosisId]);
+  }, [diagnosisId, getAccessToken]);
 
   const togglePlan = (i: number) => {
     setExpandedPlans((prev) => {

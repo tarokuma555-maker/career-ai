@@ -10,7 +10,8 @@ import {
 } from "docx";
 import { kv } from "@vercel/kv";
 import type { StoredDiagnosis } from "@/lib/agent-types";
-import { uploadToGoogleDrive } from "@/lib/google-drive-upload";
+
+
 
 export const maxDuration = 60;
 
@@ -460,14 +461,13 @@ export async function POST(request: NextRequest) {
     const uint8 = new Uint8Array(buffer);
     const fileName = `${name}_求職者情報_${dateStr}.docx`;
 
-    const url = await uploadToGoogleDrive(
-      uint8,
+    const base64 = Buffer.from(uint8).toString("base64");
+    return NextResponse.json({
+      data: base64,
       fileName,
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.google-apps.document",
-    );
-
-    return NextResponse.json({ url, type: "google_docs" });
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      googleMimeType: "application/vnd.google-apps.document",
+    });
   } catch (err) {
     console.error("Word export error:", err);
     const msg = err instanceof Error ? err.message : String(err);

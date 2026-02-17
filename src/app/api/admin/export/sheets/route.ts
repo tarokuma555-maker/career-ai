@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { kv } from "@vercel/kv";
 import type { StoredDiagnosis } from "@/lib/agent-types";
-import { uploadToGoogleDrive } from "@/lib/google-drive-upload";
+
+
 
 export const maxDuration = 60;
 
@@ -507,14 +508,13 @@ export async function POST(request: NextRequest) {
     const uint8 = new Uint8Array(buffer);
     const fileName = `${name}_求職者情報_${dateStr}.xlsx`;
 
-    const url = await uploadToGoogleDrive(
-      uint8,
+    const base64 = Buffer.from(uint8).toString("base64");
+    return NextResponse.json({
+      data: base64,
       fileName,
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.google-apps.spreadsheet",
-    );
-
-    return NextResponse.json({ url, type: "google_sheets" });
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      googleMimeType: "application/vnd.google-apps.spreadsheet",
+    });
   } catch (err) {
     console.error("Excel export error:", err);
     const msg = err instanceof Error ? err.message : String(err);
