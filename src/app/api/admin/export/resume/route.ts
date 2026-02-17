@@ -10,7 +10,6 @@ import {
 import { kv } from "@vercel/kv";
 import OpenAI from "openai";
 import type { StoredDiagnosis } from "@/lib/agent-types";
-import { uploadToGoogleDrive } from "@/lib/google-drive";
 
 export const maxDuration = 60;
 
@@ -424,26 +423,8 @@ export async function POST(request: NextRequest) {
 
   const buffer = await Packer.toBuffer(doc);
   const uint8 = new Uint8Array(buffer);
-  const displayName = `職務経歴書_${name}_${date}`;
+  const fileName = `職務経歴書_${name}_${date}.docx`;
 
-  // Google Drive にアップロードを試みる
-  try {
-    const fileId = await uploadToGoogleDrive(
-      uint8,
-      displayName,
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.google-apps.document",
-    );
-    return NextResponse.json({
-      url: `https://docs.google.com/document/d/${fileId}/edit`,
-      type: "google_docs",
-    });
-  } catch (err) {
-    console.warn("Google Drive upload failed, falling back to download:", err instanceof Error ? err.message : err);
-  }
-
-  // フォールバック: .docx バイナリを返す
-  const fileName = `${displayName}.docx`;
   return new NextResponse(uint8, {
     status: 200,
     headers: {
