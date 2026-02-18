@@ -35,6 +35,58 @@ async function cleanupStaleEntry(diagnosisId: string): Promise<void> {
   }
 }
 
+// ---------- 一括削除 ----------
+export async function DELETE(request: NextRequest) {
+  let body: { ids?: string[] };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "リクエストの形式が正しくありません。" },
+      { status: 400 },
+    );
+  }
+
+  const ids = body.ids;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return NextResponse.json(
+      { error: "削除対象のIDが指定されていません。" },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const idSet = new Set(ids);
+
+    // 1. KV から診断データを削除
+    await Promise.all(
+      ids.map((id) => kv.del(`career-ai:diagnosis:${id}`)),
+    );
+
+    // 2. インデックスから該当エントリを削除
+    const allItems = await kv.lrange("career-ai:diagnosis-index", 0, -1);
+    const toRemove: unknown[] = [];
+    for (const item of allItems) {
+      const entry = parseEntry(item);
+      if (idSet.has(entry.id)) {
+        toRemove.push(item);
+      }
+    }
+    await Promise.all(
+      toRemove.map((item) => kv.lrem("career-ai:diagnosis-index", 1, item)),
+    );
+
+    return NextResponse.json({ deleted: ids.length });
+  } catch (err) {
+    console.error("Delete error:", err);
+    return NextResponse.json(
+      { error: "削除に失敗しました。" },
+      { status: 500 },
+    );
+  }
+}
+
+// ---------- 一覧取得 / 個別取得 ----------
 export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get("id");
 

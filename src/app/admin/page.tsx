@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   LogOut,
   Loader2,
@@ -14,6 +14,8 @@ import {
   Briefcase,
   Search,
   X,
+  Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -38,6 +40,11 @@ export default function AdminDashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
+  // 削除関連
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   // 検索デバウンス
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -46,6 +53,11 @@ export default function AdminDashboardPage() {
     }, 400);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // ページ移動時に選択をリセット
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page, debouncedSearch]);
 
   const fetchDiagnoses = useCallback(async (p: number, search: string) => {
     setIsLoading(true);
@@ -77,10 +89,57 @@ export default function AdminDashboardPage() {
     router.push("/admin/login");
   };
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (!data) return;
+    const allIds = data.diagnoses.map((e) => e.id);
+    const allSelected = allIds.every((id) => selectedIds.has(id));
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allIds));
+    }
+  };
+
+  const handleDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch("/api/admin/diagnoses", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedIds) }),
+      });
+      if (!res.ok) {
+        const json = await res.json();
+        throw new Error(json.error ?? "削除に失敗しました");
+      }
+      setSelectedIds(new Set());
+      setShowDeleteConfirm(false);
+      fetchDiagnoses(page, debouncedSearch);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "削除に失敗しました");
+      setShowDeleteConfirm(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const formatDate = (ts: number) => {
     const d = new Date(ts);
     return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   };
+
+  const pageIds = data?.diagnoses.map((e) => e.id) ?? [];
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
 
   return (
     <PageTransition>
@@ -159,6 +218,40 @@ export default function AdminDashboardPage() {
             </div>
           </motion.div>
 
+          {/* 選択時の操作バー */}
+          <AnimatePresence>
+            {selectedIds.size > 0 && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded border-gray-300 accent-red-500"
+                    />
+                    <span className="text-sm font-medium text-red-800">
+                      {selectedIds.size}件選択中
+                    </span>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    削除
+                  </Button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* ローディング */}
           {isLoading && (
             <div className="flex justify-center py-12">
@@ -188,39 +281,53 @@ export default function AdminDashboardPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {data.diagnoses.map((entry, i) => (
-                    <motion.div
-                      key={entry.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.05 }}
-                    >
-                      <Link href={`/admin/result/${entry.id}`}>
-                        <Card className="hover:border-primary/30 transition-colors cursor-pointer">
+                  {data.diagnoses.map((entry, i) => {
+                    const isSelected = selectedIds.has(entry.id);
+                    return (
+                      <motion.div
+                        key={entry.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: i * 0.05 }}
+                      >
+                        <Card className={`transition-colors cursor-pointer ${isSelected ? "border-red-300 bg-red-50/50" : "hover:border-primary/30"}`}>
                           <CardContent className="pt-4 pb-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="flex-1 min-w-0 space-y-2">
-                                <p className="font-medium text-sm">{entry.name || "名前未登録"}</p>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <Badge variant="secondary" className="gap-1">
-                                    <Briefcase className="w-3 h-3" />
-                                    {entry.jobType}
-                                  </Badge>
-                                  <Badge variant="outline">{entry.employmentStatus}</Badge>
-                                  <Badge variant="outline">{entry.ageRange}</Badge>
+                            <div className="flex items-center gap-3">
+                              {/* チェックボックス */}
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelect(entry.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-4 h-4 rounded border-gray-300 accent-red-500 flex-shrink-0"
+                              />
+                              {/* カード内容（クリックで詳細へ） */}
+                              <Link href={`/admin/result/${entry.id}`} className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex-1 min-w-0 space-y-2">
+                                    <p className="font-medium text-sm">{entry.name || "名前未登録"}</p>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <Badge variant="secondary" className="gap-1">
+                                        <Briefcase className="w-3 h-3" />
+                                        {entry.jobType}
+                                      </Badge>
+                                      <Badge variant="outline">{entry.employmentStatus}</Badge>
+                                      <Badge variant="outline">{entry.ageRange}</Badge>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                      <Calendar className="w-3 h-3" />
+                                      {formatDate(entry.createdAt)}
+                                    </div>
+                                  </div>
+                                  <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                                 </div>
-                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                  <Calendar className="w-3 h-3" />
-                                  {formatDate(entry.createdAt)}
-                                </div>
-                              </div>
-                              <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                              </Link>
                             </div>
                           </CardContent>
                         </Card>
-                      </Link>
-                    </motion.div>
-                  ))}
+                      </motion.div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -251,6 +358,70 @@ export default function AdminDashboardPage() {
             </>
           )}
         </div>
+
+        {/* 削除確認ダイアログ */}
+        <AnimatePresence>
+          {showDeleteConfirm && (
+            <motion.div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              {/* オーバーレイ */}
+              <div
+                className="absolute inset-0 bg-black/50"
+                onClick={() => !isDeleting && setShowDeleteConfirm(false)}
+              />
+              {/* ダイアログ */}
+              <motion.div
+                className="relative bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-red-100">
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base">データの削除</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedIds.size}件のデータを削除しますか？
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                  この操作は取り消せません。選択した診断データが完全に削除されます。
+                </p>
+                <div className="flex gap-3 justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowDeleteConfirm(false)}
+                    disabled={isDeleting}
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                    削除する
+                  </Button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </PageTransition>
   );
